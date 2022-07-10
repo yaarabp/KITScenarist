@@ -1,20 +1,29 @@
 #include "ResearchManager.h"
 
-#include <DataLayer/DataStorageLayer/StorageFacade.h>
-#include <DataLayer/DataStorageLayer/ScenarioDataStorage.h>
 #include <DataLayer/DataStorageLayer/ResearchStorage.h>
+#include <DataLayer/DataStorageLayer/ScenarioStorage.h>
+#include <DataLayer/DataStorageLayer/ScenarioDataStorage.h>
+#include <DataLayer/DataStorageLayer/ScriptVersionStorage.h>
 #include <DataLayer/DataStorageLayer/SettingsStorage.h>
+#include <DataLayer/DataStorageLayer/StorageFacade.h>
 
 #include <Domain/Research.h>
+#include <Domain/Scenario.h>
 #include <Domain/ScenarioData.h>
+#include <Domain/ScriptVersion.h>
 
 #include <BusinessLayer/Research/ResearchModel.h>
 #include <BusinessLayer/Research/ResearchModelItem.h>
+#include <BusinessLayer/ScenarioDocument/ScenarioDocument.h>
 #include <BusinessLayer/ScenarioDocument/ScenarioTemplate.h>
+#include <BusinessLayer/ScenarioDocument/ScenarioTextDocument.h>
 
 #include <UserInterfaceLayer/Research/ResearchView.h>
 #include <UserInterfaceLayer/Research/ResearchItemDialog.h>
 
+#include <3rd_party/Helpers/RunOnce.h>
+#include <3rd_party/Helpers/TextEditHelper.h>
+#include <3rd_party/Widgets/ColoredToolButton/GoogleColorsPane.h>
 #include <3rd_party/Widgets/QLightBoxWidget/qlightboxmessage.h>
 #include <3rd_party/Widgets/SimpleTextEditor/SimpleTextEditorWidget.h>
 
@@ -22,6 +31,7 @@
 #include <QMenu>
 #include <QSplitter>
 #include <QWidget>
+#include <QWidgetAction>
 
 using ManagementLayer::ResearchManager;
 using BusinessLogic::ResearchModel;
@@ -33,6 +43,8 @@ using UserInterface::ResearchItemDialog;
 namespace {
     /**
      * @brief Флаг загрузки проекта
+     * @note Загрузка начинается, когда стартует загрузка проекта loadCurrentProject,
+     *       а заканчивается после загрузки параметров проекта loadCurrentProjectSettings
      */
     static bool g_isProjectLoading = false;
 }
@@ -44,12 +56,11 @@ ResearchManager::ResearchManager(QObject* _parent, QWidget* _parentWidget) :
     m_dialog(new ResearchItemDialog(m_view)),
     m_model(new ResearchModel(this)),
     m_currentResearchItem(0),
-    m_currentResearch(0)
+    m_currentResearch(0),
+    m_script(new BusinessLogic::ScenarioDocument(this))
 {
     initView();
     initConnections();
-
-    updateSettings();
 }
 
 QWidget* ResearchManager::view() const
@@ -82,19 +93,21 @@ void ResearchManager::loadCurrentProject()
     m_view->clear();
     m_view->selectItem(m_model->index(0, 0));
     editResearch(m_model->index(0, 0));
-
-    g_isProjectLoading = false;
 }
 
 void ResearchManager::loadScenarioData()
 {
     m_scenarioData.insert(ScenarioData::NAME_KEY, StorageFacade::scenarioDataStorage()->name());
-    m_scenarioData.insert(ScenarioData::LOGLINE_KEY, StorageFacade::scenarioDataStorage()->logline());
+    m_scenarioData.insert(ScenarioData::HEADER_KEY, StorageFacade::scenarioDataStorage()->header());
+    m_scenarioData.insert(ScenarioData::FOOTER_KEY, StorageFacade::scenarioDataStorage()->footer());
+    m_scenarioData.insert(ScenarioData::SCENE_NUMBERS_PREFIX_KEY, StorageFacade::scenarioDataStorage()->sceneNumbersPrefix());
+    m_scenarioData.insert(ScenarioData::SCENE_START_NUMBER_KEY, StorageFacade::scenarioDataStorage()->sceneStartNumber());
     m_scenarioData.insert(ScenarioData::ADDITIONAL_INFO_KEY, StorageFacade::scenarioDataStorage()->additionalInfo());
     m_scenarioData.insert(ScenarioData::GENRE_KEY, StorageFacade::scenarioDataStorage()->genre());
     m_scenarioData.insert(ScenarioData::AUTHOR_KEY, StorageFacade::scenarioDataStorage()->author());
     m_scenarioData.insert(ScenarioData::CONTACTS_KEY, StorageFacade::scenarioDataStorage()->contacts());
     m_scenarioData.insert(ScenarioData::YEAR_KEY, StorageFacade::scenarioDataStorage()->year());
+    m_scenarioData.insert(ScenarioData::LOGLINE_KEY, StorageFacade::scenarioDataStorage()->logline());
     m_scenarioData.insert(ScenarioData::SYNOPSIS_KEY, StorageFacade::scenarioDataStorage()->synopsis());
 
     if (m_view->currentResearchIndex().isValid()) {
@@ -112,12 +125,17 @@ void ResearchManager::loadCurrentProjectSettings(const QString& _projectPath)
             QString("projects/%1/research/expanded-items").arg(_projectPath),
             DataStorageLayer::SettingsStorage::ApplicationSettings)
         .toStringList());
+
+    updateSettings();
+
+    g_isProjectLoading = false;
 }
 
 void ResearchManager::closeCurrentProject()
 {
     m_scenarioData.clear();
     m_model->clear();
+    m_view->clear();
 }
 
 void ResearchManager::saveCurrentProjectSettings(const QString& _projectPath)
@@ -158,6 +176,49 @@ void ResearchManager::updateSettings()
                                 DataStorageLayer::SettingsStorage::ApplicationSettings)
                             .toInt());
     m_view->setTextSettings(scenarioTemplate.pageSizeId(), scenarioTemplate.pageMargins(), scenarioTemplate.numberingAlignment(), defaultFont);
+
+    //
+    // Настроить параметры редактора сценария
+    //
+    m_view->setScriptShowScenesNumbers(
+                DataStorageLayer::StorageFacade::settingsStorage()->value(
+                    "scenario-editor/show-scenes-numbers",
+                    DataStorageLayer::SettingsStorage::ApplicationSettings)
+                .toInt());
+    m_view->setScriptShowDialoguesNumbers(
+                DataStorageLayer::StorageFacade::settingsStorage()->value(
+                    "scenario-editor/show-dialogues-numbers",
+                    DataStorageLayer::SettingsStorage::ApplicationSettings)
+                .toInt());
+
+    //
+    // Цветовая схема
+    //
+    const bool useDarkTheme =
+            DataStorageLayer::StorageFacade::settingsStorage()->value(
+                "application/use-dark-theme",
+                DataStorageLayer::SettingsStorage::ApplicationSettings)
+            .toInt();
+    const QString colorSuffix = useDarkTheme ? "-dark" : "";
+    m_view->setScriptTextEditColors(
+                QColor(
+                    DataStorageLayer::StorageFacade::settingsStorage()->value(
+                        "scenario-editor/text-color" + colorSuffix,
+                        DataStorageLayer::SettingsStorage::ApplicationSettings)
+                    ),
+                QColor(
+                    DataStorageLayer::StorageFacade::settingsStorage()->value(
+                        "scenario-editor/background-color" + colorSuffix,
+                        DataStorageLayer::SettingsStorage::ApplicationSettings)
+                    )
+                );
+
+    //
+    // Умолчальный шрифт документа
+    //
+    m_script->document()->setDefaultFont(
+        BusinessLogic::ScenarioTemplateFacade::getTemplate().blockStyle(
+                    BusinessLogic::ScenarioBlockStyle::Action).font());
 }
 
 void ResearchManager::saveResearch()
@@ -167,12 +228,16 @@ void ResearchManager::saveResearch()
     //
     if (!m_scenarioData.isEmpty()) {
         StorageFacade::scenarioDataStorage()->setName(m_scenarioData.value(ScenarioData::NAME_KEY));
-        StorageFacade::scenarioDataStorage()->setLogline(m_scenarioData.value(ScenarioData::LOGLINE_KEY));
+        StorageFacade::scenarioDataStorage()->setHeader(m_scenarioData.value(ScenarioData::HEADER_KEY));
+        StorageFacade::scenarioDataStorage()->setFooter(m_scenarioData.value(ScenarioData::FOOTER_KEY));
+        StorageFacade::scenarioDataStorage()->setSceneNumbersPrefix(m_scenarioData.value(ScenarioData::SCENE_NUMBERS_PREFIX_KEY));
+        StorageFacade::scenarioDataStorage()->setSceneStartNumber(m_scenarioData.value(ScenarioData::SCENE_START_NUMBER_KEY));
         StorageFacade::scenarioDataStorage()->setAdditionalInfo(m_scenarioData.value(ScenarioData::ADDITIONAL_INFO_KEY));
         StorageFacade::scenarioDataStorage()->setGenre(m_scenarioData.value(ScenarioData::GENRE_KEY));
         StorageFacade::scenarioDataStorage()->setAuthor(m_scenarioData.value(ScenarioData::AUTHOR_KEY));
         StorageFacade::scenarioDataStorage()->setContacts(m_scenarioData.value(ScenarioData::CONTACTS_KEY));
         StorageFacade::scenarioDataStorage()->setYear(m_scenarioData.value(ScenarioData::YEAR_KEY));
+        StorageFacade::scenarioDataStorage()->setLogline(m_scenarioData.value(ScenarioData::LOGLINE_KEY));
         StorageFacade::scenarioDataStorage()->setSynopsis(m_scenarioData.value(ScenarioData::SYNOPSIS_KEY));
     }
 
@@ -194,6 +259,31 @@ void ResearchManager::setCommentOnly(bool _isCommentOnly)
 QString ResearchManager::scenarioName() const
 {
     return m_scenarioData.value(ScenarioData::NAME_KEY);
+}
+
+QString ResearchManager::scriptHeader() const
+{
+    return m_scenarioData.value(ScenarioData::HEADER_KEY);
+}
+
+QString ResearchManager::scriptFooter() const
+{
+    return m_scenarioData.value(ScenarioData::FOOTER_KEY);
+}
+
+QString ResearchManager::sceneNumbersPrefix() const
+{
+    return m_scenarioData.value(ScenarioData::SCENE_NUMBERS_PREFIX_KEY);
+}
+
+int ResearchManager::sceneStartNumber() const
+{
+    return m_scenarioData.value(ScenarioData::SCENE_START_NUMBER_KEY).toInt();
+}
+
+void ResearchManager::setScenesNumberingFixed(bool _fixed)
+{
+    m_view->setScenesNumberingFixed(_fixed);
 }
 
 QMap<QString, QString> ResearchManager::scenarioData() const
@@ -348,10 +438,13 @@ void ResearchManager::editResearch(const QModelIndex& _index)
             // В зависимости от типа элемента загрузим необходимые данные в редактор
             //
             switch (research->type()) {
-                case Research::Scenario: {
-                    m_view->editScenario(
+                case Research::Script: {
+                    m_view->editScript(
                         m_scenarioData.value(ScenarioData::NAME_KEY),
-                        m_scenarioData.value(ScenarioData::LOGLINE_KEY));
+                                m_scenarioData.value(ScenarioData::HEADER_KEY),
+                                m_scenarioData.value(ScenarioData::FOOTER_KEY),
+                        m_scenarioData.value(ScenarioData::SCENE_NUMBERS_PREFIX_KEY),
+                        m_scenarioData.value(ScenarioData::SCENE_START_NUMBER_KEY));
                     break;
                 }
 
@@ -366,8 +459,18 @@ void ResearchManager::editResearch(const QModelIndex& _index)
                     break;
                 }
 
+                case Research::Logline: {
+                    m_view->editLogline(m_scenarioData.value(ScenarioData::LOGLINE_KEY));
+                    break;
+                }
+
                 case Research::Synopsis: {
                     m_view->editSynopsis(m_scenarioData.value(ScenarioData::SYNOPSIS_KEY));
+                    break;
+                }
+
+                case Research::Versions: {
+                    m_view->editVersions(DataStorageLayer::StorageFacade::scriptVersionStorage()->all());
                     break;
                 }
 
@@ -441,13 +544,18 @@ void ResearchManager::editResearch(const QModelIndex& _index)
 
 void ResearchManager::removeResearch(const QModelIndex& _index)
 {
+    auto canRun = RunOnce::tryRun(Q_FUNC_INFO);
+    if (!canRun) {
+        return;
+    }
+
     //
     // Если пользователь серьёзно намерен удалить разработку
     //
     ResearchModelItem* researchItem = m_model->itemForIndex(_index);
     Research* research = researchItem->research();
     if (QLightBoxMessage::question(m_view, QString::null,
-            tr("Are you shure to remove research: <b>%1</b>?").arg(research->name()),
+            tr("Are you sure to remove research: <b>%1</b>?").arg(research->name()),
             QDialogButtonBox::Yes | QDialogButtonBox::No, QDialogButtonBox::Yes)
         == QDialogButtonBox::Yes) {
         //
@@ -504,6 +612,7 @@ void ResearchManager::showNavigatorContextMenu(const QModelIndex& _index, const 
     }
 
     ResearchModelItem* researchItem = m_model->itemForIndex(_index);
+    bool showColor = false;
     bool showAdd = false;
     bool showRemove = false;
     bool showUpdate = false;
@@ -528,6 +637,7 @@ void ResearchManager::showNavigatorContextMenu(const QModelIndex& _index, const 
         case Research::MindMap:
         case Research::Character:
         case Research::Location: {
+            showColor = true;
             showAdd = true;
             showRemove = true;
             break;
@@ -538,12 +648,41 @@ void ResearchManager::showNavigatorContextMenu(const QModelIndex& _index, const 
         }
     }
 
-    if (showAdd || showRemove) {
+    if (showColor || showAdd || showRemove) {
         QMenu menu(m_view);
+        //
+        // Цвет
+        //
+        QAction* colorAction = menu.addAction(tr("Color"));
+        QAction* removeColorAction = nullptr;
+        GoogleColorsPane* colorsPane = nullptr;
+        {
+            colorAction->setVisible(showColor);
+            QMenu* colorMenu = new QMenu(m_view);
+            removeColorAction = colorMenu->addAction(tr("Clear"));
+            colorsPane = new GoogleColorsPane(colorMenu);
+            QWidgetAction* wa = new QWidgetAction(colorMenu);
+            colorsPane->setCurrentColor(researchItem->color());
+            wa->setDefaultWidget(colorsPane);
+            colorMenu->addAction(wa);
+            colorAction->setMenu(colorMenu);
+
+            connect(colorsPane, &GoogleColorsPane::selected, &menu, &QMenu::close);
+        }
+        menu.addSeparator();
+        //
+        // Добавить
+        //
         QAction* addAction = menu.addAction(tr("Add New"));
         addAction->setVisible(showAdd);
+        //
+        // Удалить
+        //
         QAction* removeAction = menu.addAction(tr("Remove"));
         removeAction->setVisible(showRemove);
+        //
+        // Обновить список (зависит от контекста)
+        //
         QAction* updateAction =
                 menu.addAction(researchItem->research()->type() == Research::CharactersRoot
                                ? tr("Find All Characters from Script")
@@ -557,6 +696,12 @@ void ResearchManager::showNavigatorContextMenu(const QModelIndex& _index, const 
             removeResearch(_index);
         } else if (toggledAction == updateAction) {
             refreshResearchSubtree(_index);
+        } else if (toggledAction == removeColorAction) {
+            researchItem->research()->setColor(QColor());
+        } else {
+            if (colorsPane->currentColor().isValid()) {
+                researchItem->research()->setColor(colorsPane->currentColor());
+            }
         }
     }
 }
@@ -577,53 +722,111 @@ void ResearchManager::updateScenarioData(const QString& _key, const QString& _va
 void ResearchManager::initView()
 {
     m_view->setResearchModel(m_model);
+    m_view->setScriptDocument(m_script->document());
 }
 
 void ResearchManager::initConnections()
 {
-    connect(m_model, &ResearchModel::itemMoved, [=] (const QModelIndex& _index) {
+    connect(m_model, &ResearchModel::itemMoved, this, [this] (const QModelIndex& _index) {
         m_view->selectItem(_index);
         emit researchChanged();
     });
+    //
+    // По косвенным признакам определяем, что обновилась питчинговая часть
+    //
+    connect(m_model, &BusinessLogic::ResearchModel::itemsRefreshed, this, [this] { loadScenarioData(); });
 
+    connect(m_view, &ResearchView::scenesNumberingLockChanged, this, &ResearchManager::scenesNumberingLockChanged);
     connect(m_view, &ResearchView::addResearchRequested, this, &ResearchManager::addResearch);
     connect(m_view, &ResearchView::editResearchRequested, this, &ResearchManager::editResearch);
     connect(m_view, &ResearchView::removeResearchRequested, this, &ResearchManager::removeResearch);
     connect(m_view, &ResearchView::refeshResearchSubtreeRequested, this, &ResearchManager::refreshResearchSubtree);
     connect(m_view, &ResearchView::navigatorContextMenuRequested, this, &ResearchManager::showNavigatorContextMenu);
 
-    connect(m_view, &ResearchView::scenarioNameChanged, [=](const QString& _name){
-        emit scenarioNameChanged(_name);
+    connect(m_view, &ResearchView::scriptNameChanged, this, [this] (const QString& _name){
+        emit scriptNameChanged(_name);
         updateScenarioData(ScenarioData::NAME_KEY, _name);
     });
-    connect(m_view, &ResearchView::scenarioLoglineChanged, [=](const QString& _logline){
-        updateScenarioData(ScenarioData::LOGLINE_KEY, _logline);
+    connect(m_view, &ResearchView::scriptHeaderChanged, this, [this] (const QString& _header) {
+        emit scriptHeaderChanged(_header);
+        updateScenarioData(ScenarioData::HEADER_KEY, _header);
     });
-    connect(m_view, &ResearchView::titlePageAdditionalInfoChanged, [=](const QString& _additionalInfo){
+    connect(m_view, &ResearchView::scriptFooterChanged, this, [this] (const QString& _footer) {
+        emit scriptFooterChanged(_footer);
+        updateScenarioData(ScenarioData::FOOTER_KEY, _footer);
+    });
+    connect(m_view, &ResearchView::scriptSceneNumbersPrefixChanged, this, [this] (const QString& _sceneNumbersPrefix) {
+        emit sceneNumbersPrefixChanged(_sceneNumbersPrefix);
+        updateScenarioData(ScenarioData::SCENE_NUMBERS_PREFIX_KEY, _sceneNumbersPrefix);
+    });
+    connect(m_view, &ResearchView::scriptSceneStartNumber, this, [this] (const QString& _startSceneNumber) {
+        int startNumber = _startSceneNumber.toInt();
+        emit sceneStartNumberChanged(startNumber);
+        updateScenarioData(ScenarioData::SCENE_START_NUMBER_KEY, _startSceneNumber);
+    });
+    connect(m_view, &ResearchView::titlePageAdditionalInfoChanged, this, [this] (const QString& _additionalInfo){
         updateScenarioData(ScenarioData::ADDITIONAL_INFO_KEY, _additionalInfo);
     });
-    connect(m_view, &ResearchView::titlePageGenreChanged, [=](const QString& _genre){
+    connect(m_view, &ResearchView::titlePageGenreChanged, this, [this] (const QString& _genre){
         updateScenarioData(ScenarioData::GENRE_KEY, _genre);
     });
-    connect(m_view, &ResearchView::titlePageAuthorChanged, [=](const QString& _author){
+    connect(m_view, &ResearchView::titlePageAuthorChanged, this, [this] (const QString& _author){
         updateScenarioData(ScenarioData::AUTHOR_KEY, _author);
     });
-    connect(m_view, &ResearchView::titlePageContactsChanged, [=](const QString& _contacts){
+    connect(m_view, &ResearchView::titlePageContactsChanged, this, [this] (const QString& _contacts){
         updateScenarioData(ScenarioData::CONTACTS_KEY, _contacts);
     });
-    connect(m_view, &ResearchView::titlePageYearChanged, [=](const QString& _year){
+    connect(m_view, &ResearchView::titlePageYearChanged, this, [this] (const QString& _year){
         updateScenarioData(ScenarioData::YEAR_KEY, _year);
     });
-    connect(m_view, &ResearchView::synopsisTextChanged, [=](const QString& _synopsis){
+    connect(m_view, &ResearchView::loglineTextChanged, this, [this] (const QString& _logline){
+        updateScenarioData(ScenarioData::LOGLINE_KEY, _logline);
+    });
+    connect(m_view, &ResearchView::synopsisTextChanged, this, [this] (const QString& _synopsis){
         updateScenarioData(ScenarioData::SYNOPSIS_KEY, _synopsis);
     });
+    //
+    // ... версии
+    //
+    connect(m_view, &ResearchView::addScriptVersionRequested, this, &ResearchManager::addScriptVersionRequested);
+    connect(m_view, &ResearchView::showScriptVersionRequested, this, [this] (const QModelIndex& _index) {
+        QString scriptText;
+        const int mappedVersionIndex = _index.row() + 1;
+        auto scriptVersionModel = DataStorageLayer::StorageFacade::scriptVersionStorage()->all();
+        if (mappedVersionIndex < scriptVersionModel->rowCount()) {
+            Domain::ScriptVersion* scriptVersion
+                    = dynamic_cast<Domain::ScriptVersion*>(scriptVersionModel->itemForIndex(
+                                                               _index.sibling(mappedVersionIndex, _index.column())));
+            scriptText = scriptVersion->scriptText();
+        } else {
+            scriptText = DataStorageLayer::StorageFacade::scenarioStorage()->current()->text();
+        }
 
+        Domain::Scenario* scenario = m_script->scenario();
+        if (scenario == nullptr) {
+            scenario = new Domain::Scenario(Domain::Identifier(), QString(), QString(), false);
+        }
+        scenario->setText(scriptText);
+        m_script->load(scenario);
+        updateSettings();
+
+    });
+    connect(m_view, &ResearchView::removeScriptVersionRequested, this, [this] (const QModelIndex& _index) {
+        auto scriptVersionModel = DataStorageLayer::StorageFacade::scriptVersionStorage()->all();
+        Domain::ScriptVersion* scriptVersion = dynamic_cast<Domain::ScriptVersion*>(scriptVersionModel->itemForIndex(_index));
+        if (QLightBoxMessage::question(m_view, QString(), tr("Do you really want to delete script version named <b>%1</b>?")
+                                                          .arg(scriptVersion->name()))
+            == QDialogButtonBox::Yes) {
+            DataStorageLayer::StorageFacade::scriptVersionStorage()->removeScriptVersion(scriptVersion);
+            emit versionsChanged();
+        }
+    });
     //
     // ... персонаж
     //
-    connect(m_view, &ResearchView::characterNameChanged, [=] (const QString& _name) {
-        const QString newName = _name.toUpper();
-        if (m_currentResearch != 0
+    connect(m_view, &ResearchView::characterNameChanged, this, [this] (const QString& _name) {
+        const QString newName = TextEditHelper::smartToUpper(_name);
+        if (m_currentResearch != nullptr
             && m_currentResearch->type() == Research::Character
             && m_currentResearch->name() != newName) {
             const QString oldName = m_currentResearch->name();
@@ -646,16 +849,16 @@ void ResearchManager::initConnections()
             emit characterNameChanged(oldName, newName);
         }
     });
-    connect(m_view, &ResearchView::characterRealNameChanged, [=] (const QString& _name) {
-        if (m_currentResearch != 0
+    connect(m_view, &ResearchView::characterRealNameChanged, this, [this] (const QString& _name) {
+        if (m_currentResearch != nullptr
             && m_currentResearch->type() == Research::Character) {
             auto* researchCharacter = dynamic_cast<ResearchCharacter*>(m_currentResearch);
             researchCharacter->setRealName(_name);
             emit researchChanged();
         }
     });
-    connect(m_view, &ResearchView::characterDescriptionChanged, [=] (const QString& _description) {
-        if (m_currentResearch != 0
+    connect(m_view, &ResearchView::characterDescriptionChanged, this, [this] (const QString& _description) {
+        if (m_currentResearch != nullptr
             && m_currentResearch->type() == Research::Character) {
             auto* researchCharacter = dynamic_cast<ResearchCharacter*>(m_currentResearch);
             researchCharacter->setDescriptionText(_description);
@@ -665,9 +868,9 @@ void ResearchManager::initConnections()
     //
     // ... локация
     //
-    connect(m_view, &ResearchView::locationNameChanged, [=] (const QString& _name) {
-        const QString newName = _name.toUpper();
-        if (m_currentResearch != 0
+    connect(m_view, &ResearchView::locationNameChanged, this, [this] (const QString& _name) {
+        const QString newName = TextEditHelper::smartToUpper(_name);
+        if (m_currentResearch != nullptr
             && m_currentResearch->type() == Research::Location
             && m_currentResearch->name() != newName) {
             const QString oldName = m_currentResearch->name();
@@ -690,8 +893,8 @@ void ResearchManager::initConnections()
             emit locationNameChanged(oldName, newName);
         }
     });
-    connect(m_view, &ResearchView::locationDescriptionChanged, [=] (const QString& _description) {
-        if (m_currentResearch != 0
+    connect(m_view, &ResearchView::locationDescriptionChanged, this, [this] (const QString& _description) {
+        if (m_currentResearch != nullptr
             && m_currentResearch->type() == Research::Location
             && m_currentResearch->description() != _description) {
             m_currentResearch->setDescription(_description);
@@ -701,8 +904,8 @@ void ResearchManager::initConnections()
     //
     // ... текстовый элемент
     //
-    connect(m_view, &ResearchView::textNameChanged, [=](const QString& _name){
-        if (m_currentResearch != 0
+    connect(m_view, &ResearchView::textNameChanged, this, [this] (const QString& _name){
+        if (m_currentResearch != nullptr
             && (m_currentResearch->type() == Research::Folder
                 || m_currentResearch->type() == Research::Text)
             && m_currentResearch->name() != _name) {
@@ -711,8 +914,8 @@ void ResearchManager::initConnections()
             emit researchChanged();
         }
     });
-    connect(m_view, &ResearchView::textDescriptionChanged, [=](const QString& _description){
-        if (m_currentResearch != 0
+    connect(m_view, &ResearchView::textDescriptionChanged, this, [this] (const QString& _description){
+        if (m_currentResearch != nullptr
             && (m_currentResearch->type() == Research::Folder
                 || m_currentResearch->type() == Research::Text)
             && m_currentResearch->description() != _description) {
@@ -723,8 +926,8 @@ void ResearchManager::initConnections()
     //
     // ... ссылка
     //
-    connect(m_view, &ResearchView::urlNameChanged, [=](const QString& _name){
-        if (m_currentResearch != 0
+    connect(m_view, &ResearchView::urlNameChanged, this, [this] (const QString& _name){
+        if (m_currentResearch != nullptr
             && m_currentResearch->type() == Research::Url
             && m_currentResearch->name() != _name) {
             m_currentResearch->setName(_name);
@@ -732,8 +935,8 @@ void ResearchManager::initConnections()
             emit researchChanged();
         }
     });
-    connect(m_view, &ResearchView::urlLinkChanged, [=](const QString& _urlLink){
-        if (m_currentResearch != 0
+    connect(m_view, &ResearchView::urlLinkChanged, this, [this] (const QString& _urlLink){
+        if (m_currentResearch != nullptr
             && m_currentResearch->type() == Research::Url
             && m_currentResearch->url() != _urlLink) {
             m_currentResearch->setUrl(_urlLink);
@@ -741,8 +944,8 @@ void ResearchManager::initConnections()
             emit researchChanged();
         }
     });
-    connect(m_view, &ResearchView::urlContentChanged, [=](const QString& _html){
-        if (m_currentResearch != 0
+    connect(m_view, &ResearchView::urlContentChanged, this, [this] (const QString& _html){
+        if (m_currentResearch != nullptr
             && m_currentResearch->type() == Research::Url
             && m_currentResearch->description() != _html) {
             m_currentResearch->setDescription(_html);
@@ -752,8 +955,8 @@ void ResearchManager::initConnections()
     //
     // ... галерея изображений
     //
-    connect(m_view, &ResearchView::imagesGalleryNameChanged, [=](const QString& _name){
-        if (m_currentResearch != 0
+    connect(m_view, &ResearchView::imagesGalleryNameChanged, this, [this] (const QString& _name){
+        if (m_currentResearch != nullptr
             && m_currentResearch->type() == Research::ImagesGallery
             && m_currentResearch->name() != _name) {
             m_currentResearch->setName(_name);
@@ -761,8 +964,8 @@ void ResearchManager::initConnections()
             emit researchChanged();
         }
     });
-    connect(m_view, &ResearchView::imagesGalleryImageAdded, [=](const QPixmap& _image, int _sortOrder){
-        if (m_currentResearch != 0
+    connect(m_view, &ResearchView::imagesGalleryImageAdded, this, [this] (const QPixmap& _image, int _sortOrder){
+        if (m_currentResearch != nullptr
             && m_currentResearch->type() == Research::ImagesGallery) {
             //
             // Создаём новый элемент
@@ -775,8 +978,8 @@ void ResearchManager::initConnections()
             emit researchChanged();
         }
     });
-    connect(m_view, &ResearchView::imagesGalleryImageRemoved, [=](const QPixmap&, int _sortOrder){
-        if (m_currentResearch != 0
+    connect(m_view, &ResearchView::imagesGalleryImageRemoved, this, [this] (const QPixmap&, int _sortOrder){
+        if (m_currentResearch != nullptr
             && m_currentResearch->type() == Research::ImagesGallery) {
             //
             // Получим ребёнка, которого удаляют
@@ -800,8 +1003,8 @@ void ResearchManager::initConnections()
     //
     // ... изображение
     //
-    connect(m_view, &ResearchView::imageNameChanged, [=](const QString& _name){
-        if (m_currentResearch != 0
+    connect(m_view, &ResearchView::imageNameChanged, this, [this] (const QString& _name){
+        if (m_currentResearch != nullptr
             && m_currentResearch->type() == Research::Image
             && m_currentResearch->name() != _name) {
             m_currentResearch->setName(_name);
@@ -809,8 +1012,8 @@ void ResearchManager::initConnections()
             emit researchChanged();
         }
     });
-    connect(m_view, &ResearchView::imagePreviewChanged, [=](const QPixmap& _image){
-        if (m_currentResearch != 0
+    connect(m_view, &ResearchView::imagePreviewChanged, this, [this] (const QPixmap& _image){
+        if (m_currentResearch != nullptr
             && m_currentResearch->type() == Research::Image) {
             m_currentResearch->setImage(_image);
             emit researchChanged();
@@ -819,8 +1022,8 @@ void ResearchManager::initConnections()
     //
     // ... ментальная карта
     //
-    connect(m_view, &ResearchView::mindMapNameChanged, [=] (const QString& _name) {
-        if (m_currentResearch != 0
+    connect(m_view, &ResearchView::mindMapNameChanged, this, [this] (const QString& _name) {
+        if (m_currentResearch != nullptr
             && m_currentResearch->type() == Research::MindMap
             && m_currentResearch->name() != _name) {
             m_currentResearch->setName(_name);
@@ -828,8 +1031,8 @@ void ResearchManager::initConnections()
             emit researchChanged();
         }
     });
-    connect(m_view, &ResearchView::mindMapChanged, [=] (const QString& _xml) {
-        if (m_currentResearch != 0
+    connect(m_view, &ResearchView::mindMapChanged, this, [this] (const QString& _xml) {
+        if (m_currentResearch != nullptr
             && m_currentResearch->type() == Research::MindMap) {
             m_currentResearch->setDescription(_xml);
             emit researchChanged();

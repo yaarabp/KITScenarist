@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>814</width>
-    <height>681</height>
+    <width>824</width>
+    <height>666</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -156,7 +156,7 @@
            <double>10.000000000000000</double>
           </property>
           <property name="maximum">
-           <double>100.000000000000000</double>
+           <double>200.000000000000000</double>
           </property>
          </widget>
         </item>
@@ -176,7 +176,7 @@
            <double>10.000000000000000</double>
           </property>
           <property name="maximum">
-           <double>100.000000000000000</double>
+           <double>200.000000000000000</double>
           </property>
          </widget>
         </item>
@@ -196,7 +196,7 @@
            <double>10.000000000000000</double>
           </property>
           <property name="maximum">
-           <double>100.000000000000000</double>
+           <double>200.000000000000000</double>
           </property>
          </widget>
         </item>
@@ -216,7 +216,7 @@
            <double>10.000000000000000</double>
           </property>
           <property name="maximum">
-           <double>100.000000000000000</double>
+           <double>200.000000000000000</double>
           </property>
          </widget>
         </item>
@@ -327,8 +327,8 @@
           <rect>
            <x>0</x>
            <y>0</y>
-           <width>528</width>
-           <height>469</height>
+           <width>524</width>
+           <height>391</height>
           </rect>
          </property>
          <layout class="QGridLayout" name="gridLayout_5">
@@ -377,7 +377,7 @@
                   <number>1</number>
                  </property>
                  <property name="maximum">
-                  <double>100.000000000000000</double>
+                  <double>200.000000000000000</double>
                  </property>
                 </widget>
                </item>
@@ -408,7 +408,7 @@
                   <number>1</number>
                  </property>
                  <property name="maximum">
-                  <double>100.000000000000000</double>
+                  <double>200.000000000000000</double>
                  </property>
                 </widget>
                </item>
@@ -447,7 +447,7 @@
                 <number>1</number>
                </property>
                <property name="maximum">
-                <double>100.000000000000000</double>
+                <double>200.000000000000000</double>
                </property>
               </widget>
              </item>
@@ -464,7 +464,7 @@
                 <number>1</number>
                </property>
                <property name="maximum">
-                <double>100.000000000000000</double>
+                <double>200.000000000000000</double>
                </property>
               </widget>
              </item>
@@ -537,7 +537,7 @@
                <number>1</number>
               </property>
               <property name="maximum">
-               <double>100.000000000000000</double>
+               <double>200.000000000000000</double>
               </property>
              </widget>
             </item>
@@ -732,6 +732,8 @@
  <tabstops>
   <tabstop>name</tabstop>
   <tabstop>description</tabstop>
+  <tabstop>pageFormatA4</tabstop>
+  <tabstop>pageFormatLetter</tabstop>
   <tabstop>leftField</tabstop>
   <tabstop>topField</tabstop>
   <tabstop>rightField</tabstop>
@@ -740,8 +742,13 @@
   <tabstop>numberingHorizontalAlignment</tabstop>
   <tabstop>blockStyles</tabstop>
   <tabstop>isActive</tabstop>
+  <tabstop>scrollArea</tabstop>
   <tabstop>fontFamily</tabstop>
   <tabstop>fontSize</tabstop>
+  <tabstop>bold</tabstop>
+  <tabstop>italic</tabstop>
+  <tabstop>underline</tabstop>
+  <tabstop>uppercase</tabstop>
   <tabstop>alignment</tabstop>
   <tabstop>spacingType</tabstop>
   <tabstop>topSpace</tabstop>
@@ -752,6 +759,7 @@
   <tabstop>rightIndent</tabstop>
   <tabstop>lineSpacing</tabstop>
   <tabstop>lineSpacingValue</tabstop>
+  <tabstop>framingBrackets</tabstop>
  </tabstops>
  <resources/>
  <connections/>

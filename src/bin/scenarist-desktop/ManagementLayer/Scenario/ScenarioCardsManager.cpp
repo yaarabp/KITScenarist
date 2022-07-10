@@ -11,8 +11,10 @@
 
 #include <UserInterfaceLayer/Scenario/ScenarioCards/PrintCardsDialog.h>
 #include <UserInterfaceLayer/Scenario/ScenarioCards/ScenarioCardsView.h>
-#include <UserInterfaceLayer/Scenario/ScenarioItemDialog/ScenarioSchemeItemDialog.h>
+#include <UserInterfaceLayer/Scenario/ScenarioItemDialog/ScenarioItemDialog.h>
 
+#include <3rd_party/Helpers/ColorHelper.h>
+#include <3rd_party/Helpers/TextEditHelper.h>
 #include <3rd_party/Helpers/TextUtils.h>
 
 #include <QApplication>
@@ -24,10 +26,9 @@
 using ManagementLayer::ScenarioCardsManager;
 using UserInterface::PrintCardsDialog;
 using UserInterface::ScenarioCardsView;
-using UserInterface::ScenarioSchemeItemDialog;
+using UserInterface::ScenarioItemDialog;
 
 namespace {
-    const bool IS_DRAFT = true;
     const bool IS_SCRIPT = false;
 }
 
@@ -35,7 +36,7 @@ namespace {
 ScenarioCardsManager::ScenarioCardsManager(QObject* _parent, QWidget* _parentWidget) :
     QObject(_parent),
     m_view(new ScenarioCardsView(IS_SCRIPT, _parentWidget)),
-    m_addItemDialog(new ScenarioSchemeItemDialog(_parentWidget)),
+    m_addItemDialog(new ScenarioItemDialog(_parentWidget)),
     m_printDialog(new PrintCardsDialog(_parentWidget))
 {
     initConnections();
@@ -88,7 +89,7 @@ void ScenarioCardsManager::load(BusinessLogic::ScenarioModel* _model, const QStr
     //
     if (m_model != _model) {
         m_model = _model;
-        connect(m_model, &BusinessLogic::ScenarioModel::rowsInserted, [=] (const QModelIndex& _parent, int _first, int _last) {
+        connect(m_model, &BusinessLogic::ScenarioModel::rowsInserted, this, [this] (const QModelIndex& _parent, int _first, int _last) {
             //
             // Пробегаем каждый добавленный элемент
             //
@@ -132,7 +133,7 @@ void ScenarioCardsManager::load(BusinessLogic::ScenarioModel* _model, const QStr
                     item->uuid(),
                     item->type() == BusinessLogic::ScenarioModelItem::Folder,
                     item->sceneNumber(),
-                    item->title().isEmpty() ? item->header().toUpper() : item->title().toUpper(),
+                    item->name().isEmpty() ? TextEditHelper::smartToUpper(item->header()) : TextEditHelper::smartToUpper(item->name()),
                     item->description().isEmpty() ? item->fullText() : item->description(),
                     item->stamp(),
                     item->colors(),
@@ -140,7 +141,7 @@ void ScenarioCardsManager::load(BusinessLogic::ScenarioModel* _model, const QStr
                     currentCard->uuid());
             }
         });
-        connect(m_model, &BusinessLogic::ScenarioModel::rowsAboutToBeRemoved, [=] (const QModelIndex& _parent, int _first, int _last) {
+        connect(m_model, &BusinessLogic::ScenarioModel::rowsAboutToBeRemoved, this, [this] (const QModelIndex& _parent, int _first, int _last) {
             for (int row = _last; row >= _first; --row) {
                 QModelIndex currentCardIndex = _parent;
                 if (_parent.isValid()) {
@@ -152,38 +153,27 @@ void ScenarioCardsManager::load(BusinessLogic::ScenarioModel* _model, const QStr
                 m_view->removeCard(currentCard->uuid());
             }
         });
-        connect(m_model, &BusinessLogic::ScenarioModel::dataChanged, [=] (const QModelIndex& _topLeft, const QModelIndex& _bottomRight) {
+        connect(m_model, &BusinessLogic::ScenarioModel::dataChanged, this, [this] (const QModelIndex& _topLeft, const QModelIndex& _bottomRight) {
             for (int row = _topLeft.row(); row <= _bottomRight.row(); ++row) {
                 const QModelIndex index = m_model->index(row, 0, _topLeft.parent());
                 const BusinessLogic::ScenarioModelItem* item = m_model->itemForIndex(index);
-                //
-                // Если тип карточки определить не удалось, удаляем её
-                //
-                if (item->type() == BusinessLogic::ScenarioModelItem::Undefined) {
-                    m_view->removeCard(item->uuid());
-                }
-                //
-                // А если тип нормальный, то обновляем данные о карточке
-                //
-                else {
-                    const bool isAct =
-                            item->type() == BusinessLogic::ScenarioModelItem::Folder
-                            && item->hasParent()
-                            && item->parent()->type() == BusinessLogic::ScenarioModelItem::Scenario;
-                    const bool isEmbedded =
-                            item->hasParent()
-                            && item->parent()->type() != BusinessLogic::ScenarioModelItem::Scenario;
-                    m_view->updateCard(
-                        item->uuid(),
-                        item->type() == BusinessLogic::ScenarioModelItem::Folder,
-                        item->sceneNumber(),
-                        item->title().isEmpty() ? item->header().toUpper() : item->title().toUpper(),
-                        item->description().isEmpty() ? item->fullText() : item->description(),
-                        item->stamp(),
-                        item->colors(),
-                        isEmbedded,
-                        isAct);
-                }
+                const bool isAct =
+                        item->type() == BusinessLogic::ScenarioModelItem::Folder
+                        && item->hasParent()
+                        && item->parent()->type() == BusinessLogic::ScenarioModelItem::Scenario;
+                const bool isEmbedded =
+                        item->hasParent()
+                        && item->parent()->type() != BusinessLogic::ScenarioModelItem::Scenario;
+                m_view->updateCard(
+                    item->uuid(),
+                    item->type() == BusinessLogic::ScenarioModelItem::Folder,
+                    item->sceneNumber(),
+                    item->name().isEmpty() ? TextEditHelper::smartToUpper(item->header()) : TextEditHelper::smartToUpper(item->name()),
+                    item->description().isEmpty() ? item->fullText() : item->description(),
+                    item->stamp(),
+                    item->colors(),
+                    isEmbedded,
+                    isAct);
             }
         });
     }
@@ -207,7 +197,7 @@ void ScenarioCardsManager::load(BusinessLogic::ScenarioModel* _model, const QStr
 void ScenarioCardsManager::clear()
 {
     if (m_model != nullptr) {
-        m_model->disconnect();
+        m_model->disconnect(this);
         m_model = nullptr;
     }
     m_view->clear();
@@ -236,73 +226,82 @@ void ScenarioCardsManager::goToCard(const QString& _uuid)
 
 void ScenarioCardsManager::addCard()
 {
-    m_addItemDialog->setWindowTitle(tr("Add card"));
-    m_addItemDialog->clear();
+    const bool useFolders = true;
+    m_addItemDialog->prepareForAdding(!useFolders);
 
     //
     // Если пользователь действительно хочет добавить элемент
     //
     if (m_addItemDialog->exec() == QLightBoxDialog::Accepted) {
-        const int type = m_addItemDialog->cardType();
-        const QString title = m_addItemDialog->cardTitle();
-        const QString color = m_addItemDialog->cardColor();
-        const QString description = m_addItemDialog->cardDescription();
+        const int type = m_addItemDialog->itemType();
+        const QString name = m_addItemDialog->itemName();
+        const QString header = m_addItemDialog->itemHeader();
+        const QString description = m_addItemDialog->itemDescription();
+        const QString color = m_addItemDialog->itemColor();
 
         //
-        // Если задан заголовок
+        // Определим карточку, после которой нужно добавить элемент
         //
-        if (!title.isEmpty()) {
-            //
-            // Определим карточку, после которой нужно добавить элемент
-            //
-            QModelIndex index;
-            const QString lastItemUuid = m_view->beforeNewItemUuid();
-            if (!lastItemUuid.isEmpty()) {
-                index = m_model->indexForUuid(lastItemUuid);
-            }
-
-            //
-            // Если добавляется акт, то нужно взять корневой индекс
-            //
-            if (type == BusinessLogic::ScenarioModelItem::Folder
-                && index.parent().isValid()) {
-                index = index.parent();
-            }
-
-            emit addCardRequest(index, type, title, QColor(color), description);
+        QModelIndex index;
+        const QString lastItemUuid = m_view->beforeNewItemUuid();
+        if (!lastItemUuid.isEmpty()) {
+            index = m_model->indexForUuid(lastItemUuid);
         }
+
+        //
+        // Если добавляется акт, то нужно взять корневой индекс
+        //
+        if (type == BusinessLogic::ScenarioModelItem::Folder
+            && index.parent().isValid()) {
+            index = index.parent();
+        }
+
+        emit addCardRequest(index, type, name, header, description, QColor(color));
     }
 }
 
 void ScenarioCardsManager::editCard(const QString& _uuid)
 {
-    m_addItemDialog->setWindowTitle(tr("Edit card"));
-    m_addItemDialog->clear();
+    //
+    // Тут проверка идентичности названия и заголовка играет важную роль в кейсе,
+    // когда пользователь работает только с карточками и решил изменить название карточки
+    // следовательно нужно обновить её и в тексте тоже
+    //
+
+    m_addItemDialog->prepareForEditing();
 
     const QModelIndex indexForUpdate = m_model->indexForUuid(_uuid);
     const auto* itemForUpdate = m_model->itemForIndex(indexForUpdate);
-    m_addItemDialog->setCardType(itemForUpdate->type());
-    m_addItemDialog->setCardTitle(itemForUpdate->title());
+    m_addItemDialog->setItemType(itemForUpdate->type());
+    m_addItemDialog->setItemName(itemForUpdate->name());
+    const bool itemForUpdateHasEqualNameAndHeader = itemForUpdate->header() == itemForUpdate->name();
+    if (!itemForUpdateHasEqualNameAndHeader) {
+        m_addItemDialog->setItemHeader(itemForUpdate->header());
+    }
+    m_addItemDialog->setItemDescription(itemForUpdate->description());
     const QString firstColor = itemForUpdate->colors().split(";").first();
-    m_addItemDialog->setCardColor(firstColor);
-    m_addItemDialog->setCardDescription(itemForUpdate->description());
+    m_addItemDialog->setItemColor(firstColor);
 
     //
     // Если пользователь действительно хочет изменить элемент
     //
     if (m_addItemDialog->exec() == QLightBoxDialog::Accepted) {
-        const int type = m_addItemDialog->cardType();
-        const QString title = m_addItemDialog->cardTitle();
-        QString colors = itemForUpdate->colors();
-        if (firstColor != m_addItemDialog->cardColor()) {
-            colors.replace(firstColor, m_addItemDialog->cardColor());
+        const int type = m_addItemDialog->itemType();
+        const QString name = m_addItemDialog->itemName();
+        QString header = m_addItemDialog->itemHeader();
+        if (header.isEmpty()) {
+            header = name;
         }
-        const QString description = m_addItemDialog->cardDescription();
+        const QString description = m_addItemDialog->itemDescription();
+        QString colors = itemForUpdate->colors();
+        if (firstColor != m_addItemDialog->itemColor()) {
+            colors.replace(firstColor, m_addItemDialog->itemColor());
+        }
 
         //
         // Испускаем запрос на изменение
         //
-        emit updateCardRequest(indexForUpdate, type, title, colors, description);
+        emit updateCardRequest(indexForUpdate, type, name, header, description, colors);
     }
 }
 
@@ -349,7 +348,7 @@ void ScenarioCardsManager::changeCardColors(const QString& _uuid, const QString&
 {
     if (!_uuid.isEmpty()) {
         const QModelIndex index = m_model->indexForUuid(_uuid);
-        emit cardColorsChanged(index, _colors);
+        emit cardColorsChanged({ index }, _colors);
     }
 }
 
@@ -574,12 +573,26 @@ void ScenarioCardsManager::printCards(QPrinter* _printer)
                     //
                     lastY += height;
                 }
+
+                //
+                // Дополнительная магия, чтобы отступы завелись
+                //
+                if (currentCardIndex % 2 == 0) {
+                    cardRect.setLeft(cardRect.left() + 1);
+                } else {
+                    cardRect.setRight(cardRect.right() - 1);
+                }
+                if (currentCardIndex % (cardsCount / 2) <= 1) {
+                    cardRect.setTop(cardRect.top() + 1);
+                } else if (currentCardIndex % (cardsCount / 2) >= (cardsCount / 2 - 1)) {
+                    cardRect.setBottom(cardRect.bottom() - 1);
+                }
                 break;
             }
         }
 
         //
-        // Дополнительные отступы
+        // Дополнительные отступы от принтера
         //
         // ... снизу
         //
@@ -606,9 +619,30 @@ void ScenarioCardsManager::printCards(QPrinter* _printer)
         }
 
         //
+        // Дополнительные отступы для удобочитаемости
+        //
+        const int contentMargin = 6;
+        cardRect.setBottom(cardRect.bottom() - contentMargin);
+        cardRect.setTop(cardRect.top() + contentMargin);
+        cardRect.setLeft(cardRect.left() + contentMargin);
+        cardRect.setRight(cardRect.right() - contentMargin);
+
+        //
         // Рисуем карточку
         //
         {
+            if (m_printDialog->printColorCards()) {
+                const auto cardColor = item->colors().split(";").first();
+                if (!cardColor.isEmpty()) {
+                    const qreal delta = contentMargin + sideMargin;
+                    QRectF fullCardRect = cardRect.adjusted(-delta, -delta, delta, delta);
+                    painter.fillRect(fullCardRect, cardColor);
+                    painter.setPen(ColorHelper::textColor(cardColor));
+                } else {
+                    painter.setPen(Qt::black);
+                }
+            }
+
             //
             // Рисуем заголовок
             //
@@ -620,11 +654,11 @@ void ScenarioCardsManager::printCards(QPrinter* _printer)
             painter.setFont(font);
             const int titleHeight = painter.fontMetrics().height();
             const QRectF titleRect(cardRect.left(), cardRect.top(), cardRect.width(), titleHeight);
-            QString titleText = item->title().isEmpty() ? item->header() : item->title();
+            QString titleText = item->name().isEmpty() ? item->header() : item->name();
             if (item->type() == BusinessLogic::ScenarioModelItem::Scene) {
                 titleText.prepend(QString("%1. ").arg(item->sceneNumber()));
             }
-            titleText = TextUtils::elidedText(titleText.toUpper(), painter.font(), titleRect.size(), textoption);
+            titleText = TextUtils::elidedText(TextEditHelper::smartToUpper(titleText), painter.font(), titleRect.size(), textoption);
             painter.drawText(titleRect, titleText, textoption);
 
             //

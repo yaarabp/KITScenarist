@@ -17,15 +17,18 @@ class QMenuBar;
 
 namespace UserInterface {
     class ApplicationView;
+    class MenuView;
 }
 
 namespace ManagementLayer
 {
     class ProjectsManager;
+    class MenuManager;
     class StartUpManager;
     class ResearchManager;
     class ScenarioManager;
     class StatisticsManager;
+    class ToolsManager;
     class SettingsManager;
     class ExportManager;
     class ImportManager;
@@ -93,6 +96,11 @@ namespace ManagementLayer
         void aboutSave();
 
         /**
+         * @brief Начать новую версию сценария
+         */
+        void aboutStartNewVersion();
+
+        /**
          * @brief Сохранить настройки текущего проекта
          */
         void saveCurrentProjectSettings(const QString& _projectPath);
@@ -115,6 +123,11 @@ namespace ManagementLayer
         void aboutShowHelp();
 
         /**
+         * @brief Открыть страницу краудфандинга
+         */
+        void aboutShowCrowdfinding();
+
+        /**
          * @brief Загрузить выбранный из списка локальный проект
          */
         void aboutLoadFromRecent(const QModelIndex& _projectIndex);
@@ -123,6 +136,11 @@ namespace ManagementLayer
          * @brief Скрыть проект из списка локальных
          */
         void hideLocalProject(const QModelIndex& _index);
+
+        /**
+         * @brief Перенести локальный проект в облако
+         */
+        void moveLocalProjectToCloud(const QModelIndex& _index);
 
         /**
          * @brief Загрузить выбранный проект из облака
@@ -175,9 +193,9 @@ namespace ManagementLayer
         void aboutExport();
 
         /**
-         * @brief Предварительный просмотр и печать
+         * @brief Предварительный просмотр и печать сценария
          */
-        void aboutPrintPreview();
+        void printPreviewScript();
 
         /**
          * @brief Закрыть приложение
@@ -242,7 +260,7 @@ namespace ManagementLayer
         /**
          * @brief Настроить текущий проект для редактирования
          */
-        void goToEditCurrentProject();
+        void goToEditCurrentProject(const QString& _importFilePath = QString());
 
         /**
          * @brief Закрыть текущий проект
@@ -294,12 +312,12 @@ namespace ManagementLayer
         /**
          * @brief Главное окно приложения
          */
-        UserInterface::ApplicationView* m_view;
+        UserInterface::ApplicationView* m_view = nullptr;
 
         /**
-         * @brief Меню приложения
+         * @brief Кнопка вызова меню приложения
          */
-        FlatButton* m_menu;
+        FlatButton* m_menu = nullptr;
 
 #ifdef Q_OS_MAC
         /**
@@ -316,77 +334,87 @@ namespace ManagementLayer
         /**
          * @brief Заглушка для верха правой панели
          */
-        QLabel* m_menuSecondary;
+        QLabel* m_menuSecondary = nullptr;
 
         /**
          * @brief Панель вкладок
          */
-        SideTabBar* m_tabs;
+        SideTabBar* m_tabs = nullptr;
 
         /**
          * @brief Дополнительная панель вкладок
          */
-        SideTabBar* m_tabsSecondary;
+        SideTabBar* m_tabsSecondary = nullptr;
 
         /**
          * @brief Виджеты вкладок
          */
-        QStackedWidget* m_tabsWidgets;
+        QStackedWidget* m_tabsWidgets = nullptr;
 
         /**
          * @brief Дополнительная панель для виджетов вкладок
          */
-        QStackedWidget* m_tabsWidgetsSecondary;
+        QStackedWidget* m_tabsWidgetsSecondary = nullptr;
 
         /**
          * @brief Разделитель основных и дополнительных элементов управления
          */
-        QSplitter* m_splitter;
+        QSplitter* m_splitter = nullptr;
 
         /**
          * @brief Управляющий проектами
          */
-        ProjectsManager* m_projectsManager;
+        ProjectsManager* m_projectsManager = nullptr;
+
+        /**
+         * @brief Управляющий меню
+         */
+        MenuManager* m_menuManager = nullptr;
 
         /**
          * @brief Управляющий стартовой страницей
          */
-        StartUpManager* m_startUpManager;
+        StartUpManager* m_startUpManager = nullptr;
 
         /**
          * @brief Управляющий страницей разработки
          */
-        ResearchManager* m_researchManager;
+        ResearchManager* m_researchManager = nullptr;
 
         /**
          * @brief Управляющий сценарием
          */
-        ScenarioManager* m_scenarioManager;
+        ScenarioManager* m_scenarioManager = nullptr;
 
         /**
          * @brief Управляющий статистикой
          */
-        StatisticsManager* m_statisticsManager;
+        StatisticsManager* m_statisticsManager = nullptr;
+
+        /**
+         * @brief Управляющий инструментами
+         */
+        ToolsManager* m_toolsManager = nullptr;
 
         /**
          * @brief Управляющий настройками
          */
-        SettingsManager* m_settingsManager;
+        SettingsManager* m_settingsManager = nullptr;
 
         /**
          * @brief Управляющий импортом
          */
-        ImportManager* m_importManager;
+        ImportManager* m_importManager = nullptr;
 
         /**
          * @brief Управляющий экспортом
          */
-        ExportManager* m_exportManager;
+        ExportManager* m_exportManager = nullptr;
 
         /**
          * @brief Управляющий синхронизацией
          */
-        SynchronizationManager* m_synchronizationManager;
+        SynchronizationManager* m_synchronizationManager = nullptr;
 
         /**
          * @brief Таймер автосохранения
@@ -397,6 +425,28 @@ namespace ManagementLayer
          * @brief Помощник резервного копирования
          */
         BackupHelper m_backupHelper;
+
+        /**
+         * @brief Состояние приложения в данный момент
+         */
+        enum class ApplicationState {
+            /**
+             * @brief Инициализация после запуска
+             */
+            Initializing,
+            /**
+             * @brief Загрузка проекта
+             */
+            ProjectLoading,
+            /**
+             * @brief Рабочее состояние
+             */
+            Working,
+            /**
+             * @brief Импортирование
+             */
+            Importing
+        } m_state = ApplicationState::Initializing;
     };
 }
 

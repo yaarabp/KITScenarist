@@ -5,6 +5,8 @@
 #include <BusinessLayer/ScenarioDocument/ScenarioTemplate.h>
 #include <BusinessLayer/ScenarioDocument/ScenarioTextDocument.h>
 
+#include <3rd_party/Widgets/QLightBoxWidget/qlightboxinputdialog.h>
+
 #include <DataLayer/DataStorageLayer/StorageFacade.h>
 #include <DataLayer/DataStorageLayer/SettingsStorage.h>
 
@@ -61,7 +63,7 @@ void ScenarioTextEditManager::setDuration(const QString& _duration)
     m_view->setDuration(_duration);
 }
 
-void ScenarioTextEditManager::setCountersInfo(const QString& _counters)
+void ScenarioTextEditManager::setCountersInfo(const QStringList& _counters)
 {
     m_view->setCountersInfo(_counters);
 }
@@ -154,7 +156,13 @@ void ScenarioTextEditManager::reloadTextEditSettings()
                     DataStorageLayer::SettingsStorage::ApplicationSettings)
                 .toDouble());
 
-    m_view->setShowSuggestionsInEmptyBlocks(
+    m_view->setShowAutocompletionInEmptyBlocks(
+                DataStorageLayer::StorageFacade::settingsStorage()->value(
+                    "scenario-editor/show-suggestions-in-empty-blocks-2",
+                    DataStorageLayer::SettingsStorage::ApplicationSettings)
+                .toInt());
+
+    m_view->setAutocompleteNextCharacterForDialogue(
                 DataStorageLayer::StorageFacade::settingsStorage()->value(
                     "scenario-editor/show-suggestions-in-empty-blocks",
                     DataStorageLayer::SettingsStorage::ApplicationSettings)
@@ -181,6 +189,7 @@ void ScenarioTextEditManager::reloadTextEditSettings()
 
     m_view->updateStylesElements();
     m_view->updateShortcuts();
+    m_view->updateToolBar();
 }
 
 int ScenarioTextEditManager::cursorPosition() const
@@ -208,6 +217,21 @@ void ScenarioTextEditManager::scrollToPosition(int _position)
     m_view->setCursorPosition(_position, false, false);
 }
 
+void ScenarioTextEditManager::setScriptHeader(const QString& _header)
+{
+    m_view->setScriptHeader(_header);
+}
+
+void ScenarioTextEditManager::setScriptFooter(const QString& _footer)
+{
+    m_view->setScriptFooter(_footer);
+}
+
+void ScenarioTextEditManager::setSceneNumbersPrefix(const QString& _prefix)
+{
+    m_view->setSceneNumbersPrefix(_prefix);
+}
+
 #ifdef Q_OS_MAC
 void ScenarioTextEditManager::buildEditMenu(QMenu* _menu)
 {
@@ -215,30 +239,24 @@ void ScenarioTextEditManager::buildEditMenu(QMenu* _menu)
 }
 #endif
 
-void ScenarioTextEditManager::addScenarioItemFromCards(int _position, int _type,
-    const QString& _title, const QColor& _color, const QString& _description)
+void ScenarioTextEditManager::addScenarioItem(int _position, int _type, const QString& _name,
+    const QString& _header, const QString& _description, const QColor& _color)
 {
     //
     // Переводим тип элемента
     //
     const int mappedType = ::mapItemTypeFromModelToBlock(_type);
-    m_view->addItem(_position, mappedType, QString::null, _title, _color, _description);
+    m_view->addItem(_position, mappedType, _name, _header, _description, _color);
 }
 
-void ScenarioTextEditManager::addScenarioItem(int _position, int _type, const QString& _header,
-    const QColor& _color, const QString& _description)
-{
-    m_view->addItem(_position, _type, _header, QString::null, _color, _description);
-}
-
-void ScenarioTextEditManager::editScenarioItem(int _startPosition, int _endPosition, int _type,
-    const QString& _title, const QString& _colors, const QString& _description)
+void ScenarioTextEditManager::editScenarioItem(int _startPosition, int _type, const QString& _name,
+    const QString& _header, const QString& _colors)
 {
     //
     // Переводим тип элемента
     //
     const int mappedType = ::mapItemTypeFromModelToBlock(_type);
-    m_view->editItem(_startPosition, _endPosition, mappedType, _title, _colors, _description);
+    m_view->editItem(_startPosition, mappedType, _name, _header, _colors);
 }
 
 void ScenarioTextEditManager::removeScenarioText(int _from, int _to)
@@ -269,6 +287,14 @@ void ScenarioTextEditManager::aboutTextEditZoomRangeChanged(qreal _zoomRange)
                 DataStorageLayer::SettingsStorage::ApplicationSettings);
 }
 
+void ScenarioTextEditManager::renameSceneNumber(const QString& _oldSceneNumber, int _position)
+{
+    QString newSceneNumber = QLightBoxInputDialog::getText(m_view, tr("Enter new scene number"), tr("New scene number"), _oldSceneNumber);
+    if (!newSceneNumber.isEmpty()) {
+        emit renameSceneNumberRequested(newSceneNumber, _position);
+    }
+}
+
 void ScenarioTextEditManager::initView()
 {
 
@@ -283,4 +309,7 @@ void ScenarioTextEditManager::initConnections()
     connect(m_view, &ScenarioTextEditWidget::cursorPositionChanged, this, &ScenarioTextEditManager::cursorPositionChanged);
     connect(m_view, &ScenarioTextEditWidget::zoomRangeChanged, this, &ScenarioTextEditManager::aboutTextEditZoomRangeChanged);
     connect(m_view, &ScenarioTextEditWidget::quitFromZenMode, this, &ScenarioTextEditManager::quitFromZenMode);
+    connect(m_view, &ScenarioTextEditWidget::addBookmarkRequested, this, &ScenarioTextEditManager::addBookmarkRequested);
+    connect(m_view, &ScenarioTextEditWidget::removeBookmarkRequested, this, &ScenarioTextEditManager::removeBookmarkRequested);
+    connect(m_view, &ScenarioTextEditWidget::renameSceneNumberRequested, this, &ScenarioTextEditManager::renameSceneNumber);
 }

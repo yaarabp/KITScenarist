@@ -1,6 +1,5 @@
 #include "StatisticsView.h"
 
-#include "ReportButton.h"
 #include "StatisticsSettings.h"
 
 #include <DataLayer/DataStorageLayer/StorageFacade.h>
@@ -10,11 +9,10 @@
 
 #include <3rd_party/Delegates/TreeViewItemDelegate/TreeViewItemDelegate.h>
 #include <3rd_party/Styles/TreeViewProxyStyle/TreeViewProxyStyle.h>
-#include <3rd_party/Widgets/Ctk/ctkCollapsibleButton.h>
-#include <3rd_party/Widgets/Ctk/ctkPopupWidget.h>
 #include <3rd_party/Widgets/FlatButton/FlatButton.h>
 #include <3rd_party/Widgets/QLightBoxWidget/qlightboxprogress.h>
 #include <3rd_party/Widgets/QCutomPlot/qcustomplotextended.h>
+#include <3rd_party/Widgets/WAF/StackedWidgetAnimation/StackedWidgetAnimation.h>
 
 #include <QApplication>
 #include <QButtonGroup>
@@ -34,9 +32,10 @@
 #include <QVariant>
 #include <QVBoxLayout>
 
+#include <cmath>
+
 using UserInterface::StatisticsView;
 using UserInterface::StatisticsSettings;
-using UserInterface::ReportButton;
 using BusinessLogic::StatisticsParameters;
 
 namespace {
@@ -82,6 +81,7 @@ StatisticsView::StatisticsView(QWidget* _parent) :
     m_print(new FlatButton(this)),
     m_save(new FlatButton(this)),
     m_update(new FlatButton(this)),
+    m_navigation(new QStackedWidget(this)),
     m_statisticTypes(new QTreeWidget(this)),
     m_statisticSettings(new StatisticsSettings(this)),
     m_statisticData(new QStackedWidget(this)),
@@ -139,12 +139,12 @@ void StatisticsView::setPlot(const BusinessLogic::Plot& _plot)
         // Определяем максимумы
         //
         for (const qreal& x : singlePlotData.x) {
-            if (!isnan(x) && x > maxX) {
+            if (!std::isnan(x) && x > maxX) {
                 maxX = x;
             }
         }
         for (const qreal& y : singlePlotData.y) {
-            if (!isnan(y) && y > maxY) {
+            if (!std::isnan(y) && y > maxY) {
                 maxY = y;
             }
         }
@@ -172,7 +172,7 @@ void StatisticsView::hideProgress()
     m_progress->finish();
 }
 
-void StatisticsView::aboutInitDataPanel()
+void StatisticsView::activateReport()
 {
     if (m_statisticTypes->currentItem() == nullptr) {
         return;
@@ -181,8 +181,12 @@ void StatisticsView::aboutInitDataPanel()
     const QTreeWidgetItem* item = m_statisticTypes->currentItem();
     if (!item->data(0, Qt::UserRole).isValid()
         || !item->data(0, Qt::UserRole + 1).isValid()) {
+        m_settings->setEnabled(false);
         return;
     }
+
+    m_settings->setEnabled(true);
+    m_statisticSettings->setTitle(item->text(0));
 
     const int type = item->data(0, Qt::UserRole).toInt();
     if (type == BusinessLogic::StatisticsParameters::Report) {
@@ -198,14 +202,13 @@ void StatisticsView::aboutInitDataPanel()
     //
     const QModelIndex itemIndex = m_statisticTypes->currentIndex();
     const QModelIndex parentIndex = itemIndex.parent();
-    const int settingsIndex = parentIndex.row() * 5 + itemIndex.row() + 1;
-    m_statisticSettings->setCurrentIndex(settingsIndex);
-    if (ctkPopupWidget* settingsPanel = m_settings->findChild<ctkPopupWidget*>()) {
-        settingsPanel->setFixedSize(m_statisticSettings->currentWidget()->sizeHint());
-    }
+    const int settingsIndex = parentIndex.row() * 5 + itemIndex.row();
+    m_statisticSettings->setCurrentType(settingsIndex);
+
+    QTimer::singleShot(0, m_settings, &FlatButton::click);
 }
 
-void StatisticsView::aboutMakeReport()
+void StatisticsView::makeReport()
 {
     if (m_statisticTypes->currentItem() == nullptr) {
         return;
@@ -227,16 +230,16 @@ void StatisticsView::aboutMakeReport()
         parameters.plotType = static_cast<BusinessLogic::StatisticsParameters::PlotType>(subtype);
     }
 
-    emit makeReport(parameters);
+    emit makeReportRequested(parameters);
 }
 
-void StatisticsView::aboutPrintReport()
+void StatisticsView::printReport()
 {
     QPrinter printer;
     printer.setPageMargins(0, 0, 0, 0, QPrinter::Millimeter);
     QPrintPreviewDialog printDialog(&printer, this);
     printDialog.setWindowState(Qt::WindowMaximized);
-    connect(&printDialog, SIGNAL(paintRequested(QPrinter*)), this, SLOT(aboutPrint(QPrinter*)));
+    connect(&printDialog, &QPrintPreviewDialog::paintRequested, this, &StatisticsView::print);
 
     //
     // Вызываем диалог предварительного просмотра и печати
@@ -244,12 +247,12 @@ void StatisticsView::aboutPrintReport()
     printDialog.exec();
 }
 
-void StatisticsView::aboutPrint(QPrinter* _printer)
+void StatisticsView::print(QPrinter* _printer)
 {
     m_reportData->document()->print(_printer);
 }
 
-void StatisticsView::aboutSaveReport()
+void StatisticsView::saveReport()
 {
     //
     // Сохраняем отчёт
@@ -265,7 +268,10 @@ void StatisticsView::aboutSaveReport()
             printer.setPageMargins(0, 0, 0, 0, QPrinter::Millimeter);
             printer.setOutputFormat(QPrinter::PdfFormat);
             printer.setOutputFileName(fileName);
-            m_reportData->print(&printer);
+            QTextDocument reportDocument;
+            reportDocument.setHtml(m_reportData->toHtml()
+                                   .remove(QRegularExpression("(<a.*?>|</a>|<span.*?>|</span>)")));
+            reportDocument.print(&printer);
 
             ::saveReportsFolderPath(fileName);
         }
@@ -292,68 +298,58 @@ void StatisticsView::initView()
     //
     // Настраиваем панели инструментов
     //
-    m_settings->setIcons(QIcon(":/Graphics/Icons/settings_tool.png"));
-    m_settings->setCheckable(true);
+    m_settings->setIcons(QIcon(":/Graphics/Iconset/settings.svg"));
     m_settings->setToolTip(tr("Report settings"));
-    ctkPopupWidget* settingsPanel = new ctkPopupWidget(m_settings);
-    QHBoxLayout* settingsPanelLayout = new QHBoxLayout(settingsPanel);
-    settingsPanelLayout->setContentsMargins(QMargins());
-    settingsPanelLayout->setSpacing(0);
-    settingsPanelLayout->addWidget(m_statisticSettings);
-    settingsPanel->setAutoShow(false);
-    settingsPanel->setAutoHide(false);
-    settingsPanel->setEffectDuration(200);
-    settingsPanel->setFixedSize(1, 0);
-    connect(m_settings, SIGNAL(toggled(bool)), settingsPanel, SLOT(showPopup(bool)));
-
-    m_print->setIcons(QIcon(":/Graphics/Icons/printer.png"));
+    m_settings->setEnabled(false);
+    m_print->setIcons(QIcon(":/Graphics/Iconset/printer.svg"));
     m_print->setToolTip(tr("Print preview"));
-    m_save->setIcons(QIcon(":/Graphics/Icons/Editing/download.png"));
+    m_save->setIcons(QIcon(":/Graphics/Iconset/content-save.svg"));
     m_save->setToolTip(tr("Save report to file"));
-    m_update->setIcons(QIcon(":/Graphics/Icons/Editing/refresh.png"));
+    m_update->setIcons(QIcon(":/Graphics/Iconset/refresh.svg"));
     m_update->setToolTip(tr("Update current report"));
+    m_navigation->setObjectName("statisticsNavigation");
 
 
     //
     // Настраиваем панель со списком отчётов
     //
     QTreeWidgetItem* reports = new QTreeWidgetItem(m_statisticTypes, { tr("Reports") });
-    reports->setData(0, Qt::DecorationRole, QPixmap(":/Graphics/Icons/report-multiple.png"));
+    reports->setData(0, Qt::DecorationRole, QPixmap(":/Graphics/Iconset/clipboard-text.svg"));
     QTreeWidgetItem* summaryStatisticsReport = new QTreeWidgetItem(reports, { tr("Summary statistics") });
     summaryStatisticsReport->setData(0, Qt::UserRole, StatisticsParameters::Report);
     summaryStatisticsReport->setData(0, Qt::UserRole + 1, StatisticsParameters::SummaryReport);
-    summaryStatisticsReport->setData(0, Qt::DecorationRole, QPixmap(":/Graphics/Icons/report.png"));
+    summaryStatisticsReport->setData(0, Qt::DecorationRole, QPixmap(":/Graphics/Iconset/file-document-box.svg"));
     QTreeWidgetItem* sceneReport = new QTreeWidgetItem(reports, { tr("Scene report") });
     sceneReport->setData(0, Qt::UserRole, StatisticsParameters::Report);
     sceneReport->setData(0, Qt::UserRole + 1, StatisticsParameters::SceneReport);
-    sceneReport->setData(0, Qt::DecorationRole, QPixmap(":/Graphics/Icons/report.png"));
+    sceneReport->setData(0, Qt::DecorationRole, QPixmap(":/Graphics/Iconset/file-document-box.svg"));
     QTreeWidgetItem* locationReport = new QTreeWidgetItem(reports, { tr("Location report") });
     locationReport->setData(0, Qt::UserRole, StatisticsParameters::Report);
     locationReport->setData(0, Qt::UserRole + 1, StatisticsParameters::LocationReport);
-    locationReport->setData(0, Qt::DecorationRole, QPixmap(":/Graphics/Icons/report.png"));
+    locationReport->setData(0, Qt::DecorationRole, QPixmap(":/Graphics/Iconset/file-document-box.svg"));
     QTreeWidgetItem* castReport = new QTreeWidgetItem(reports, { tr("Cast report") });
     castReport->setData(0, Qt::UserRole, StatisticsParameters::Report);
     castReport->setData(0, Qt::UserRole + 1, StatisticsParameters::CastReport);
-    castReport->setData(0, Qt::DecorationRole, QPixmap(":/Graphics/Icons/report.png"));
+    castReport->setData(0, Qt::DecorationRole, QPixmap(":/Graphics/Iconset/file-document-box.svg"));
     QTreeWidgetItem* charactersDialoguesReport = new QTreeWidgetItem(reports, { tr("Characters dialogues") });
     charactersDialoguesReport->setData(0, Qt::UserRole, StatisticsParameters::Report);
     charactersDialoguesReport->setData(0, Qt::UserRole + 1, StatisticsParameters::CharacterReport);
-    charactersDialoguesReport->setData(0, Qt::DecorationRole, QPixmap(":/Graphics/Icons/report.png"));
+    charactersDialoguesReport->setData(0, Qt::DecorationRole, QPixmap(":/Graphics/Iconset/file-document-box.svg"));
     m_statisticTypes->addTopLevelItem(reports);
 
     //
     // Настраиваем панель со списком графиков
     //
     QTreeWidgetItem* plots = new QTreeWidgetItem(m_statisticTypes, { tr("Plots") });
-    plots->setData(0, Qt::DecorationRole, QPixmap(":/Graphics/Icons/plot-multiple.png"));
+    plots->setData(0, Qt::DecorationRole, QPixmap(":/Graphics/Iconset/clipboard-pulse.svg"));
     QTreeWidgetItem* storyStructureAnalisysPlot = new QTreeWidgetItem(plots, { tr("Story structure analysis") });
     storyStructureAnalisysPlot->setData(0, Qt::UserRole, StatisticsParameters::Plot);
     storyStructureAnalisysPlot->setData(0, Qt::UserRole + 1, StatisticsParameters::StoryStructureAnalisysPlot);
-    storyStructureAnalisysPlot->setData(0, Qt::DecorationRole, QPixmap(":/Graphics/Icons/plot.png"));
+    storyStructureAnalisysPlot->setData(0, Qt::DecorationRole, QPixmap(":/Graphics/Iconset/chart-line.svg"));
     QTreeWidgetItem* charactersActivityPlot = new QTreeWidgetItem(plots, { tr("Characters activity") });
     charactersActivityPlot->setData(0, Qt::UserRole, StatisticsParameters::Plot);
     charactersActivityPlot->setData(0, Qt::UserRole + 1, StatisticsParameters::CharactersActivityPlot);
-    charactersActivityPlot->setData(0, Qt::DecorationRole, QPixmap(":/Graphics/Icons/plot.png"));
+    charactersActivityPlot->setData(0, Qt::DecorationRole, QPixmap(":/Graphics/Iconset/chart-line.svg"));
     m_statisticTypes->addTopLevelItem(plots);
 
     m_statisticTypes->setObjectName("StatisticsTypesTree");
@@ -365,15 +361,26 @@ void StatisticsView::initView()
     //
     // Настраиваем общую панель с группами отчётов
     //
-    QVBoxLayout* statisticTypesMainLayout = new QVBoxLayout;
-    statisticTypesMainLayout->setContentsMargins(QMargins());
-    statisticTypesMainLayout->setSpacing(0);
-    statisticTypesMainLayout->addWidget(m_leftTopEmptyLabel);
-    statisticTypesMainLayout->addWidget(m_statisticTypes);
+    QHBoxLayout* statisticTypesToolbarLayout = new QHBoxLayout;
+    statisticTypesToolbarLayout->setContentsMargins(QMargins());
+    statisticTypesToolbarLayout->setSpacing(0);
+    statisticTypesToolbarLayout->addWidget(m_leftTopEmptyLabel);
+    statisticTypesToolbarLayout->addWidget(m_settings);
+    //
+    QVBoxLayout* statisticTypesLayout = new QVBoxLayout;
+    statisticTypesLayout->setContentsMargins(QMargins());
+    statisticTypesLayout->setSpacing(0);
+    statisticTypesLayout->addLayout(statisticTypesToolbarLayout);
+    statisticTypesLayout->addWidget(m_statisticTypes);
 
+    //
+    // Настраиваем виджет навигации целиком
+    //
     QWidget* statisticTypesPanel = new QWidget(this);
     statisticTypesPanel->setObjectName("statisticTypesPanel");
-    statisticTypesPanel->setLayout(statisticTypesMainLayout);
+    statisticTypesPanel->setLayout(statisticTypesLayout);
+    m_navigation->addWidget(statisticTypesPanel);
+    m_navigation->addWidget(m_statisticSettings);
 
     //
     // Настраиваем панель с данными по отчётам
@@ -386,10 +393,9 @@ void StatisticsView::initView()
     QHBoxLayout* toolbarLayout = new QHBoxLayout;
     toolbarLayout->setContentsMargins(QMargins());
     toolbarLayout->setSpacing(0);
-    toolbarLayout->addWidget(m_settings);
-    toolbarLayout->addWidget(m_print);
-    toolbarLayout->addWidget(m_save);
     toolbarLayout->addWidget(m_update);
+    toolbarLayout->addWidget(m_save);
+    toolbarLayout->addWidget(m_print);
     toolbarLayout->addWidget(m_rightTopEmptyLabel);
 
     QVBoxLayout* statisticDataLayout = new QVBoxLayout;
@@ -411,7 +417,7 @@ void StatisticsView::initView()
     splitter->setHandleWidth(1);
     splitter->setOpaqueResize(false);
     splitter->setChildrenCollapsible(false);
-    splitter->addWidget(statisticTypesPanel);
+    splitter->addWidget(m_navigation);
     splitter->addWidget(statisticDataPanel);
 
     QHBoxLayout* layout = new QHBoxLayout;
@@ -479,13 +485,21 @@ void StatisticsView::initPlot()
 
 void StatisticsView::initConnections()
 {
-    connect(m_statisticTypes, &QTreeWidget::currentItemChanged, this, &StatisticsView::aboutInitDataPanel);
-    connect(m_statisticTypes, &QTreeWidget::currentItemChanged, this, &StatisticsView::aboutMakeReport);
+    connect(m_statisticTypes, &QTreeWidget::currentItemChanged, this, &StatisticsView::activateReport);
+    connect(m_statisticTypes, &QTreeWidget::itemClicked, this, &StatisticsView::activateReport);
 
-    connect(m_statisticSettings, &StatisticsSettings::settingsChanged, this, &StatisticsView::aboutMakeReport);
+    connect(m_settings, &FlatButton::clicked, [this] {
+        const int delay = WAF::StackedWidgetAnimation::slide(m_navigation, m_statisticSettings, WAF::FromRightToLeft);
+        QTimer::singleShot(delay, this, &StatisticsView::makeReport);
+    });
 
-    connect(m_print, &FlatButton::clicked, this, &StatisticsView::aboutPrintReport);
-    connect(m_save, &FlatButton::clicked, this, &StatisticsView::aboutSaveReport);
+    connect(m_statisticSettings, &StatisticsSettings::backPressed, [this] {
+        WAF::StackedWidgetAnimation::slide(m_navigation, m_navigation->widget(0), WAF::FromLeftToRight);
+    });
+    connect(m_statisticSettings, &StatisticsSettings::settingsChanged, this, &StatisticsView::makeReport);
+
+    connect(m_print, &FlatButton::clicked, this, &StatisticsView::printReport);
+    connect(m_save, &FlatButton::clicked, this, &StatisticsView::saveReport);
     connect(m_update, &FlatButton::clicked, [=] {
         //
         // Запоминаем последнюю позицию в отчёте
@@ -494,7 +508,7 @@ void StatisticsView::initConnections()
         //
         // Обновляем отчёт
         //
-        aboutMakeReport();
+        makeReport();
         //
         // Восстанавливаем позицию
         //

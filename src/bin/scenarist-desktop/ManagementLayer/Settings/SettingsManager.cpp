@@ -20,6 +20,7 @@
 
 #include <QApplication>
 #include <QFileDialog>
+#include <QProcess>
 #include <QSplitter>
 #include <QStandardItemModel>
 #include <QStandardPaths>
@@ -137,6 +138,13 @@ void SettingsManager::disableCompactMode()
 
 void SettingsManager::aboutResetSettings()
 {
+    const auto dialogResult
+            = QLightBoxMessage::question(m_view, tr("Settings resetting"),
+                    tr("Do you really want to reset all application settings to default?"));
+    if (dialogResult == QDialogButtonBox::No) {
+        return;
+    }
+
     QLightBoxProgress progress(m_view);
     progress.showProgress(tr("Restoring"),
         tr("Please wait. Restoring settings to default values can take few minutes."));
@@ -146,13 +154,20 @@ void SettingsManager::aboutResetSettings()
     //
     DataStorageLayer::StorageFacade::settingsStorage()->resetValues(
         DataStorageLayer::SettingsStorage::ApplicationSettings);
+    DataStorageLayer::StorageFacade::settingsStorage()->resetApplicationStateAndGeometry();
 
     //
     // Перезагружаем интерфейс
     //
-    initView();
+    progress.showProgress(tr("Restoring"), tr("Restarting the application."));
 
-    progress.close();
+    const auto isProcessStarted = QProcess::startDetached(qApp->arguments().constFirst());
+    if (isProcessStarted) {
+        qApp->quit();
+    } else {
+        initView();
+        progress.close();
+    }
 }
 
 void SettingsManager::applicationLanguageChanged(int _value)
@@ -162,7 +177,7 @@ void SettingsManager::applicationLanguageChanged(int _value)
     //
     // Уведомляем о том, что язык сменится после перезапуска
     //
-    QLightBoxMessage::information(m_view, QString::null, tr("Language will be change after application restart."));
+    QLightBoxMessage::information(m_view, QString::null, tr("Language will be changed after application restart."));
 }
 
 void SettingsManager::applicationUseDarkThemeChanged(bool _value)
@@ -200,6 +215,16 @@ void SettingsManager::applicationTwoPanelModeChanged(bool _value)
     storeValue("application/two-panel-mode", _value);
 }
 
+void SettingsManager::applicationHidpiScalingChanged(bool _value)
+{
+    storeValue("application/hidpi-scaling", _value);
+
+    //
+    // Уведомляем о том, что разрешение сменится только после перезагрузки
+    //
+    QLightBoxMessage::information(m_view, QString::null, tr("HIDPI scaling option will be applied after application restart."));
+}
+
 void SettingsManager::applicationModuleResearchChanged(bool _value)
 {
     storeValue("application/modules/research", _value);
@@ -218,6 +243,11 @@ void SettingsManager::applicationModuleScenarioChanged(bool _value)
 void SettingsManager::applicationModuleStatisticsChanged(bool _value)
 {
     storeValue("application/modules/statistics", _value);
+}
+
+void SettingsManager::applicationModuleToolsChanged(bool _value)
+{
+    storeValue("application/modules/tools", _value);
 }
 
 void SettingsManager::researchDefaultFontChanged(const QString& _family, int _size)
@@ -308,6 +338,10 @@ void SettingsManager::scenarioEditSpellCheckChanged(bool _value)
 
 void SettingsManager::scenarioEditSpellCheckLanguageChanged(int _value)
 {
+    if (_value == -1) {
+        return;
+    }
+
     //
     // Сохраняем значение выбранного языка
     //
@@ -362,7 +396,9 @@ void SettingsManager::scenarioEditSpellCheckLanguageChanged(int _value)
         const QString hunspellDictionariesFolderUrl = "https://kitscenarist.ru/downloads/hunspell/";
         //
         NetworkRequest dictionaryLoader;
-        connect(&dictionaryLoader, &NetworkRequest::downloadProgress, &progress, &QLightBoxProgress::setProgressValue);
+        connect(&dictionaryLoader, &NetworkRequest::downloadProgress, this, [] (int _value) {
+            QLightBoxProgress::setProgressValue(_value);
+        });
         const QByteArray affFileData = dictionaryLoader.loadSync(hunspellDictionariesFolderUrl + affFileName);
         bool downloadingAffFileSuccess = affFileData.size() > 0;
         if (downloadingAffFileSuccess) {
@@ -460,6 +496,11 @@ void SettingsManager::scenarioEditAutoJumpToNextBlockChanged(bool _value)
 }
 
 void SettingsManager::scenarioEditShowSuggestionsInEmptyBlocksChanged(bool _value)
+{
+    storeValue("scenario-editor/show-suggestions-in-empty-blocks-2", _value);
+}
+
+void SettingsManager::scenarioEditAutocompleteNextCharacterForDialogueChanged(bool _value)
 {
     storeValue("scenario-editor/show-suggestions-in-empty-blocks", _value);
 }
@@ -797,6 +838,12 @@ void SettingsManager::initView()
                     DataStorageLayer::SettingsStorage::ApplicationSettings)
                 .toInt()
                 );
+    m_view->setApplicationHidpiScaling(
+                DataStorageLayer::StorageFacade::settingsStorage()->value(
+                    "application/hidpi-scaling",
+                    DataStorageLayer::SettingsStorage::ApplicationSettings)
+                .toInt()
+                );
     //
     // ... модули
     //
@@ -821,6 +868,12 @@ void SettingsManager::initView()
     m_view->setApplicationModuleStatistics(
                 DataStorageLayer::StorageFacade::settingsStorage()->value(
                     "application/modules/statistics",
+                    DataStorageLayer::SettingsStorage::ApplicationSettings)
+                .toInt()
+                );
+    m_view->setApplicationModuleTools(
+                DataStorageLayer::StorageFacade::settingsStorage()->value(
+                    "application/modules/tools",
                     DataStorageLayer::SettingsStorage::ApplicationSettings)
                 .toInt()
                 );
@@ -1033,7 +1086,14 @@ void SettingsManager::initView()
                 .toInt()
                 );
     // ... показывать ли подсказки в пустых блоках
-    m_view->setScenarioEditShowSuggestionsInEmptyBlocks(
+    m_view->setScenarioEditAutocompleteNextCharacterForDialogue(
+                DataStorageLayer::StorageFacade::settingsStorage()->value(
+                    "scenario-editor/show-suggestions-in-empty-blocks-2",
+                    DataStorageLayer::SettingsStorage::ApplicationSettings)
+                .toInt()
+                );
+    // ... подбирать ли персонажей по контексту
+    m_view->setScenarioEditAutocompleteNextCharacterForDialogue(
                 DataStorageLayer::StorageFacade::settingsStorage()->value(
                     "scenario-editor/show-suggestions-in-empty-blocks",
                     DataStorageLayer::SettingsStorage::ApplicationSettings)
@@ -1248,7 +1308,7 @@ void SettingsManager::initConnections()
     //
     // Сохранение изменений параметров
     //
-    connect(m_view, SIGNAL(applicationLanguageChanged(int)), this, SLOT(applicationLanguageChanged(int)));
+    connect(m_view, &SettingsView::applicationLanguageChanged, this, &SettingsManager::applicationLanguageChanged);
     connect(m_view, SIGNAL(applicationUseDarkThemeChanged(bool)), this, SLOT(applicationUseDarkThemeChanged(bool)));
     connect(m_view, SIGNAL(applicationAutosaveChanged(bool)), this, SLOT(applicationAutosaveChanged(bool)));
     connect(m_view, SIGNAL(applicationAutosaveIntervalChanged(int)), this, SLOT(applicationAutosaveIntervalChanged(int)));
@@ -1256,10 +1316,12 @@ void SettingsManager::initConnections()
     connect(m_view, SIGNAL(applicationSaveBackupsFolderChanged(QString)), this, SLOT(applicationSaveBackupsFolderChanged(QString)));
     connect(m_view, &SettingsView::applicationCompactModeChanged, this, &SettingsManager::applicationCompactModeChanged);
     connect(m_view, &SettingsView::applicationTwoPanelModeChanged, this, &SettingsManager::applicationTwoPanelModeChanged);
+    connect(m_view, &SettingsView::applicationHidpiScalingChanged, this, &SettingsManager::applicationHidpiScalingChanged);
     connect(m_view, &SettingsView::applicationModuleResearchChanged, this, &SettingsManager::applicationModuleResearchChanged);
     connect(m_view, &SettingsView::applicationModuleCardsChanged, this, &SettingsManager::applicationModuleCardsChanged);
     connect(m_view, &SettingsView::applicationModuleScenarioChanged, this, &SettingsManager::applicationModuleScenarioChanged);
     connect(m_view, &SettingsView::applicationModuleStatisticsChanged, this, &SettingsManager::applicationModuleStatisticsChanged);
+    connect(m_view, &SettingsView::applicationModuleToolsChanged, this, &SettingsManager::applicationModuleToolsChanged);
 
     connect(m_view, &SettingsView::researchDefaultFontChanged, this, &SettingsManager::researchDefaultFontChanged);
 
@@ -1295,6 +1357,8 @@ void SettingsManager::initConnections()
     connect(m_view, SIGNAL(scenarioEditAutoJumpToNextBlockChanged(bool)), this, SLOT(scenarioEditAutoJumpToNextBlockChanged(bool)));
     connect(m_view, &SettingsView::scenarioEditShowSuggestionsInEmptyBlocksChanged,
             this, &SettingsManager::scenarioEditShowSuggestionsInEmptyBlocksChanged);
+    connect(m_view, &SettingsView::scenarioEditAutocompleteNextCharacterForDialogueChanged,
+            this, &SettingsManager::scenarioEditAutocompleteNextCharacterForDialogueChanged);
     connect(m_view, SIGNAL(scenarioEditBlockSettingsChanged(QString,QString,QString,QString,QString,QString)),
             this, SLOT(scenarioEditBlockSettingsChanged(QString,QString,QString,QString,QString,QString)));
     connect(m_view, &SettingsView::scenarioEditUseOpenBracketInDialogueForParenthetical,
@@ -1346,6 +1410,7 @@ void SettingsManager::initConnections()
     connect(m_view, &SettingsView::applicationModuleCharactersChanged, this, &SettingsManager::applicationSettingsUpdated);
     connect(m_view, &SettingsView::applicationModuleLocationsChanged, this, &SettingsManager::applicationSettingsUpdated);
     connect(m_view, &SettingsView::applicationModuleStatisticsChanged, this, &SettingsManager::applicationSettingsUpdated);
+    connect(m_view, &SettingsView::applicationModuleToolsChanged, this, &SettingsManager::applicationSettingsUpdated);
 
     connect(m_view, &SettingsView::researchDefaultFontChanged, this, &SettingsManager::researchSettingsUpdated);
 
@@ -1382,6 +1447,7 @@ void SettingsManager::initConnections()
     connect(m_view, SIGNAL(scenarioEditCurrentTemplateChanged(QString)), this, SIGNAL(scenarioEditSettingsUpdated()));
     connect(m_view, SIGNAL(scenarioEditAutoJumpToNextBlockChanged(bool)), this, SIGNAL(scenarioEditSettingsUpdated()));
     connect(m_view, &SettingsView::scenarioEditShowSuggestionsInEmptyBlocksChanged, this, &SettingsManager::scenarioEditSettingsUpdated);
+    connect(m_view, &SettingsView::scenarioEditAutocompleteNextCharacterForDialogueChanged, this, &SettingsManager::scenarioEditSettingsUpdated);
     connect(m_view, SIGNAL(scenarioEditBlockSettingsChanged(QString,QString,QString,QString,QString,QString)), this, SIGNAL(scenarioEditSettingsUpdated()));
     connect(m_view, &SettingsView::scenarioEditUseOpenBracketInDialogueForParenthetical, this, &SettingsManager::scenarioEditSettingsUpdated);
     connect(m_view, SIGNAL(scenarioEditReviewUseWordHighlightChanged(bool)), this, SIGNAL(scenarioEditSettingsUpdated()));

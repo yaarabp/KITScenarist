@@ -24,8 +24,8 @@ using UserInterface::ScenarioNavigatorItemDelegate;
 using UserInterface::ScenarioNavigatorProxyStyle;
 
 
-ScenarioNavigator::ScenarioNavigator(QWidget *parent) :
-    QWidget(parent),
+ScenarioNavigator::ScenarioNavigator(QWidget *_parent) :
+    QWidget(_parent),
     m_draftTitle(new QLabel(this)),
     m_scenesCountTitle(new QLabel(this)),
     m_scenesCount(new QLabel(this)),
@@ -35,6 +35,7 @@ ScenarioNavigator::ScenarioNavigator(QWidget *parent) :
     m_showAdditionalPanels(new FlatButton(this)),
     m_showDraft(new QAction(m_showAdditionalPanels)),
     m_showSceneDescription(new QAction(m_showAdditionalPanels)),
+    m_showScriptBookmarks(new QAction(m_showAdditionalPanels)),
     m_showScriptDictionaries(new QAction(m_showAdditionalPanels)),
     m_navigationTree(new QTreeView(this)),
     m_navigationTreeDelegate(new ScenarioNavigatorItemDelegate(this))
@@ -92,6 +93,11 @@ void ScenarioNavigator::setSceneDescriptionHeight(int _height)
     m_navigationTreeDelegate->setSceneDescriptionHeight(_height);
 }
 
+void ScenarioNavigator::setSceneNumbersPrefix(const QString& _prefix)
+{
+    m_navigationTreeDelegate->setSceneNumbersPrefix(_prefix);
+}
+
 void ScenarioNavigator::resetView()
 {
     m_navigationTree->setItemDelegate(0);
@@ -131,6 +137,11 @@ void ScenarioNavigator::setDraftVisible(bool _visible)
 void ScenarioNavigator::setSceneDescriptionVisible(bool _visible)
 {
     m_showSceneDescription->setChecked(_visible);
+}
+
+void ScenarioNavigator::setScriptBookmarksVisible(bool _visible)
+{
+    m_showScriptBookmarks->setChecked(_visible);
 }
 
 void ScenarioNavigator::setScriptDictionariesVisible(bool _visible)
@@ -203,54 +214,79 @@ void ScenarioNavigator::aboutRemoveItem()
 void ScenarioNavigator::aboutContextMenuRequested(const QPoint& _pos)
 {
     QMenu* menu = new QMenu(this);
+    const bool isSelectedJustOneItem = m_navigationTree->selectionModel()->selectedIndexes().size() == 1;
 
     //
     // Преобразование элемента
     //
-    QAction* convertToScene = menu->addAction(tr("Convert to scene"));
-    convertToScene->setData(BusinessLogic::ScenarioModelItem::Scene);
-    QAction* convertToFolder = menu->addAction(tr("Convert to folder"));
-    convertToFolder->setData(BusinessLogic::ScenarioModelItem::Folder);
-    switch (m_navigationTree->currentIndex().data(BusinessLogic::ScenarioModel::TypeIndex).toInt()) {
-        case BusinessLogic::ScenarioModelItem::Scene: {
-            convertToScene->setVisible(false);
-            break;
-        }
+    QAction* convertToScene = nullptr;
+    QAction* convertToFolder = nullptr;
+    //
+    // ... создаём только если выделен один элемент
+    //
+    if (isSelectedJustOneItem) {
+        convertToScene = menu->addAction(tr("Convert to scene"));
+        convertToScene->setData(BusinessLogic::ScenarioModelItem::Scene);
+        convertToFolder = menu->addAction(tr("Convert to folder"));
+        convertToFolder->setData(BusinessLogic::ScenarioModelItem::Folder);
+        switch (m_navigationTree->currentIndex().data(BusinessLogic::ScenarioModel::TypeIndex).toInt()) {
+            case BusinessLogic::ScenarioModelItem::Scene: {
+                convertToScene->setVisible(false);
+                break;
+            }
 
-        case BusinessLogic::ScenarioModelItem::Folder: {
-            convertToFolder->setVisible(false);
-            break;
+            case BusinessLogic::ScenarioModelItem::Folder: {
+                convertToFolder->setVisible(false);
+                break;
+            }
         }
     }
 
     //
     // Цвета
     //
-    menu->addSeparator();
-    QString colorsNames =
-            m_navigationTree->currentIndex().data(BusinessLogic::ScenarioModel::ColorIndex).toString();
-    int colorIndex = 1;
+    if (isSelectedJustOneItem) {
+        menu->addSeparator();
+    }
+    //
+    // ... очистить цвета
+    //
+    QAction* clearColors = menu->addAction(tr("Clear all colors"));
+    //
+    // ... добавить
+    //
     QList<GoogleColorsPane*> colorsPanesList;
+    QString colorsNames;
+    QStringList colorsTags;
     //
-    // ... добавляем каждый цвет
+    // ... только если выделен один элемент
     //
-    foreach (const QString& colorName, colorsNames.split(";", QString::SkipEmptyParts)) {
-        QAction* color = menu->addAction(tr("Color %1").arg(colorIndex));
-        QMenu* colorMenu = new QMenu(this);
-        QAction* removeColor = colorMenu->addAction(tr("Clear"));
-        removeColor->setData(QString("removeColor:%1").arg(colorIndex));
-        QWidgetAction* wa = new QWidgetAction(colorMenu);
-        GoogleColorsPane* colorsPane = new GoogleColorsPane(colorMenu);
-        colorsPane->setCurrentColor(QColor(colorName));
-        wa->setDefaultWidget(colorsPane);
-        colorMenu->addAction(wa);
-        color->setMenu(colorMenu);
+    if (isSelectedJustOneItem) {
+        colorsNames = m_navigationTree->currentIndex().data(BusinessLogic::ScenarioModel::ColorIndex).toString();
+        int colorIndex = 0;
+        //
+        // ... добавляем каждый цвет
+        //
+        for (const QString& colorName : colorsNames.split(";")) {
+            QAction* color = menu->addAction(colorIndex == 0 ? tr("Main color")
+                                                             : tr("Additional color %1").arg(colorIndex));
+            QMenu* colorMenu = new QMenu(this);
+            QAction* removeColor = colorMenu->addAction(tr("Clear"));
+            removeColor->setData(QString("removeColor:%1").arg(colorIndex));
+            QWidgetAction* wa = new QWidgetAction(colorMenu);
+            GoogleColorsPane* colorsPane = new GoogleColorsPane(colorMenu);
+            colorsPane->setCurrentColor(QColor(colorName.left(7)));
+            colorsTags.append(colorName.mid(7));
+            wa->setDefaultWidget(colorsPane);
+            colorMenu->addAction(wa);
+            color->setMenu(colorMenu);
 
-        connect(colorsPane, SIGNAL(selected(QColor)), menu, SLOT(close()));
+            connect(colorsPane, &GoogleColorsPane::selected, menu, &QMenu::close);
 
-        colorsPanesList.append(colorsPane);
+            colorsPanesList.append(colorsPane);
 
-        ++colorIndex;
+            ++colorIndex;
+        }
     }
     //
     // ... пункт для нового цвета
@@ -264,10 +300,11 @@ void ScenarioNavigator::aboutContextMenuRequested(const QPoint& _pos)
         colorMenu->addAction(wa);
         color->setMenu(colorMenu);
 
-        connect(colorsPane, SIGNAL(selected(QColor)), menu, SLOT(close()));
+        connect(colorsPane, &GoogleColorsPane::selected, menu, &QMenu::close);
 
         colorsPanesList.append(colorsPane);
     }
+
 
     //
     // Остальное
@@ -276,11 +313,12 @@ void ScenarioNavigator::aboutContextMenuRequested(const QPoint& _pos)
     QAction* addNew = menu->addAction(tr("Create After"));
     QAction* remove = menu->addAction(tr("Remove"));
 
+
     //
     // Выводим меню
     //
     QAction* toggled = menu->exec(mapToGlobal(_pos));
-    if (toggled != 0) {
+    if (toggled != nullptr) {
         if (toggled->data().toString().startsWith("removeColor")) {
             //
             // Удаляем выбранный цвет из списка и обновляемся
@@ -288,9 +326,9 @@ void ScenarioNavigator::aboutContextMenuRequested(const QPoint& _pos)
             const int removeColorIndex = toggled->data().toString().split(":").last().toInt();
             QString newColorsNames;
             int colorIndex = 1;
-            foreach (const QString& colorName, colorsNames.split(";", QString::SkipEmptyParts)) {
+            for (const QString& colorName : colorsNames.split(";")) {
                 if (colorIndex != removeColorIndex) {
-                    if (!newColorsNames.isEmpty()) {
+                    if (!newColorsNames.isEmpty() || colorIndex == 2) {
                         newColorsNames.append(";");
                     }
                     newColorsNames.append(colorName);
@@ -299,7 +337,9 @@ void ScenarioNavigator::aboutContextMenuRequested(const QPoint& _pos)
                 ++colorIndex;
             }
 
-            emit setItemColors(m_navigationTree->currentIndex(), newColorsNames);
+            emit setItemsColors(m_navigationTree->selectionModel()->selectedIndexes(), newColorsNames);
+        } else if (toggled == clearColors) {
+            emit setItemsColors(m_navigationTree->selectionModel()->selectedIndexes(), QString());
         } else if (toggled == addNew) {
             aboutAddItem();
         } else if (toggled == remove) {
@@ -314,15 +354,17 @@ void ScenarioNavigator::aboutContextMenuRequested(const QPoint& _pos)
         // Добавляем новый цвет и обновляемся
         //
         QString newColorsNames;
-        foreach (GoogleColorsPane* colorsPane, colorsPanesList) {
+        int colorIndex = 0;
+        for (GoogleColorsPane* colorsPane : colorsPanesList) {
             if (colorsPane->currentColor().isValid()) {
-                if (!newColorsNames.isEmpty()) {
+                if (!newColorsNames.isEmpty() || colorIndex == 1) {
                     newColorsNames.append(";");
                 }
-                newColorsNames.append(colorsPane->currentColor().name());
+                newColorsNames.append(colorsPane->currentColor().name() + colorsTags.value(colorIndex));
             }
+            ++colorIndex;
         }
-        emit setItemColors(m_navigationTree->currentIndex(), newColorsNames);
+        emit setItemsColors(m_navigationTree->selectionModel()->selectedIndexes(), newColorsNames);
     }
 
     menu->deleteLater();
@@ -339,19 +381,20 @@ void ScenarioNavigator::initView()
     m_scenesCount->setToolTip(tr("Scenes Count"));
     m_scenesCount->setAlignment((QLocale().textDirection() == Qt::LeftToRight ? Qt::AlignLeft : Qt::AlignRight) | Qt::AlignVCenter);
 
-    m_addItem->setIcons(QIcon(":/Graphics/Icons/Editing/add.png"));
+    m_addItem->setIcons(QIcon(":/Graphics/Iconset/plus.svg"));
     m_addItem->setToolTip(tr("Add Scenario Item After Selected"));
 
-    m_removeItem->setIcons(QIcon(":/Graphics/Icons/Editing/delete.png"));
+    m_removeItem->setIcons(QIcon(":/Graphics/Iconset/delete.svg"));
     m_removeItem->setToolTip(tr("Remove Selected Scenario Item"));
 
     m_middleTitle->setFixedWidth(1);
 
-    m_showAdditionalPanels->setIcons(QIcon(":/Graphics/Icons/view-panels.png"));
+    m_showAdditionalPanels->setIcons(QIcon(":/Graphics/Iconset/view-agenda.svg"));
     m_showAdditionalPanels->setToolTip(tr("Show/hide additional panels"));
     m_showAdditionalPanels->setPopupMode(QToolButton::MenuButtonPopup);
     m_showAdditionalPanels->addAction(m_showDraft);
     m_showAdditionalPanels->addAction(m_showSceneDescription);
+    m_showAdditionalPanels->addAction(m_showScriptBookmarks);
     m_showAdditionalPanels->addAction(m_showScriptDictionaries);
 
     m_showDraft->setObjectName("navigatorShowDraft");
@@ -363,6 +406,11 @@ void ScenarioNavigator::initView()
     m_showSceneDescription->setText(tr("Scene description"));
     m_showSceneDescription->setToolTip(tr("Show/hide scene note"));
     m_showSceneDescription->setCheckable(true);
+
+    m_showScriptBookmarks->setObjectName("navigatorShowScriptBookmars");
+    m_showScriptBookmarks->setText(tr("Script bookmarks"));
+    m_showScriptBookmarks->setToolTip(tr("Show/hide script bookmarks"));
+    m_showScriptBookmarks->setCheckable(true);
 
     m_showScriptDictionaries->setObjectName("navigatorShowScriptDictionaries");
     m_showScriptDictionaries->setText(tr("Script dictionaries"));
@@ -408,6 +456,7 @@ void ScenarioNavigator::initConnections()
     connect(m_showAdditionalPanels, &FlatButton::clicked, m_showAdditionalPanels, &FlatButton::showMenu);
     connect(m_showDraft, &QAction::toggled, this, &ScenarioNavigator::draftVisibleChanged);
     connect(m_showSceneDescription, &QAction::toggled, this, &ScenarioNavigator::sceneDescriptionVisibleChanged);
+    connect(m_showScriptBookmarks, &QAction::toggled, this, &ScenarioNavigator::scriptBookmarksVisibleChanged);
     connect(m_showScriptDictionaries, &QAction::toggled, this, &ScenarioNavigator::scriptDictionariesVisibleChanged);
     connect(m_navigationTree, SIGNAL(clicked(QModelIndex)), this, SIGNAL(sceneChoosed(QModelIndex)));
 }

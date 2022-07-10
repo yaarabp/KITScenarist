@@ -1,40 +1,42 @@
 #include "ApplicationManager.h"
 
-#include "StartUp/StartUpManager.h"
+#include "Export/ExportManager.h"
+#include "Import/ImportManager.h"
+#include "MenuManager.h"
 #include "Research/ResearchManager.h"
 #include "Scenario/ScenarioCardsManager.h"
 #include "Scenario/ScenarioManager.h"
-#include "Statistics/StatisticsManager.h"
 #include "Settings/SettingsManager.h"
-#include "Import/ImportManager.h"
-#include "Export/ExportManager.h"
+#include "StartUp/StartUpManager.h"
+#include "Statistics/StatisticsManager.h"
+#include "Tools/ToolsManager.h"
 
-#include <ManagementLayer/Project/ProjectsManager.h>
-#include <ManagementLayer/Synchronization/SynchronizationManager.h>
-#include <ManagementLayer/Synchronization/Sync.h>
-
-#include <BusinessLayer/ScenarioDocument/ScenarioTemplate.h>
-#include <BusinessLayer/ScenarioDocument/ScenarioDocument.h>
-#include <BusinessLayer/ScenarioDocument/ScenarioTextDocument.h>
-#include <BusinessLayer/Export/PdfExporter.h>
-
-#include <Domain/ScenarioChange.h>
-
-#include <DataLayer/Database/Database.h>
-#include <DataLayer/DataStorageLayer/DatabaseHistoryStorage.h>
-#include <DataLayer/DataStorageLayer/ScenarioChangeStorage.h>
-#include <DataLayer/DataStorageLayer/SettingsStorage.h>
-#include <DataLayer/DataStorageLayer/StorageFacade.h>
-
+#include <3rd_party/Helpers/RunOnce.h>
 #include <3rd_party/Helpers/TextUtils.h>
 #include <3rd_party/Widgets/FlatButton/FlatButton.h>
-#include <3rd_party/Widgets/SideBar/SideBar.h>
-#include <3rd_party/Widgets/QLightBoxWidget/qlightboxprogress.h>
-#include <3rd_party/Widgets/QLightBoxWidget/qlightboxmessage.h>
 #include <3rd_party/Widgets/QLightBoxWidget/qlightboxinputdialog.h>
-
-#include <UserInterfaceLayer/ApplicationView.h>
+#include <3rd_party/Widgets/QLightBoxWidget/qlightboxmessage.h>
+#include <3rd_party/Widgets/QLightBoxWidget/qlightboxprogress.h>
+#include <3rd_party/Widgets/SideBar/SideBar.h>
+#include <3rd_party/Widgets/WAF/Animation/Animation.h>
+#include <BusinessLayer/Export/PdfExporter.h>
+#include <BusinessLayer/ScenarioDocument/ScenarioDocument.h>
+#include <BusinessLayer/ScenarioDocument/ScenarioTemplate.h>
+#include <BusinessLayer/ScenarioDocument/ScenarioTextDocument.h>
+#include <DataLayer/DataStorageLayer/DatabaseHistoryStorage.h>
+#include <DataLayer/DataStorageLayer/ScenarioChangeStorage.h>
+#include <DataLayer/DataStorageLayer/ScriptVersionStorage.h>
+#include <DataLayer/DataStorageLayer/SettingsStorage.h>
+#include <DataLayer/DataStorageLayer/StorageFacade.h>
+#include <DataLayer/Database/Database.h>
+#include <Domain/ScenarioChange.h>
+#include <ManagementLayer/Project/ProjectsManager.h>
+#include <ManagementLayer/Synchronization/Sync.h>
+#include <ManagementLayer/Synchronization/SynchronizationManager.h>
+#include <UserInterfaceLayer/Application/ApplicationView.h>
+#include <UserInterfaceLayer/Application/MenuView.h>
 #include <UserInterfaceLayer/Project/AddProjectDialog.h>
+#include <UserInterfaceLayer/Project/ProjectVersionDialog.h>
 #include <UserInterfaceLayer/Project/ShareDialog.h>
 #include <UserInterfaceLayer/ScenarioNavigator/ScenarioNavigatorItemDelegate.h>
 
@@ -56,146 +58,179 @@
 #include <QToolButton>
 #include <QVBoxLayout>
 #include <QWidgetAction>
-
 #include <QtConcurrentRun>
 
 #include <functional>
 
 using namespace ManagementLayer;
-using UserInterface::ApplicationView;
 using UserInterface::AddProjectDialog;
+using UserInterface::ApplicationView;
+using UserInterface::MenuView;
 using UserInterface::ShareDialog;
 
 namespace {
-    /**
-     * @brief Номера пунктов меню
-     */
-    /** @{ */
-    const int IMPORT_MENU_INDEX = 5;
-    const int PRINT_PREVIEW_MENU_INDEX = 7;
-    const int TWO_PANEL_MODE_MENU_INDEX = 9;
-    /** @} */
+/**
+ * @brief Номера пунктов меню
+ */
+/** @{ */
+const int kStartNewVersionMenuIndex = 5;
+const int kImportMenuIndex = 6;
+const int kExportMenuIndex = 7;
+const int kTwoPanelModeMenuIndex = 9;
+/** @} */
 
-    /**
-     * @brief Номера вкладок
-     */
-    /** @{ */
-    const int STARTUP_TAB_INDEX = 0;
-    const int RESEARCH_TAB_INDEX = 1;
-    const int SCENARIO_CARDS_TAB_INDEX = 2;
-    const int SCENARIO_TAB_INDEX = 3;
-    const int STATISTICS_TAB_INDEX = 4;
-    const int SETTINGS_TAB_INDEX = 5;
-    /** @} */
+/**
+ * @brief Номера вкладок
+ */
+/** @{ */
+const int STARTUP_TAB_INDEX = 0;
+const int RESEARCH_TAB_INDEX = 1;
+const int SCENARIO_CARDS_TAB_INDEX = 2;
+const int SCENARIO_TAB_INDEX = 3;
+const int STATISTICS_TAB_INDEX = 4;
+const int TOOLS_TAB_INDEX = 5;
+const int SETTINGS_TAB_INDEX = 6;
+/** @} */
 
-    /**
-     * @brief Расширения файлов проекта
-     */
-    const QString PROJECT_FILE_EXTENSION = ".kitsp"; // kit scenarist project
+/**
+ * @brief Расширения файлов проекта
+ */
+const QString kProjectFleExtension = ".kitsp"; // kit scenarist project
 
-    /**
-     * @brief Старый вордовский формат не поддерживается
-     */
-    const QString MS_DOC_EXTENSION = ".doc";
+/**
+ * @brief Старый вордовский формат не поддерживается
+ */
+const QString kMsDocExtension = ".doc";
 
-    /**
-     * @brief Суффикс "изменено" для заголовка окна добавляемый в маке
-     */
-    const char* MAC_CHANGED_SUFFIX =
-            QT_TRANSLATE_NOOP("ManagementLayer::ApplicationManager", " - changed");
-
-    /**
-     * @brief Флаг: синхронизация недоступна
-     */
-    const bool SYNC_UNAVAILABLE = false;
-
-    /**
-     * @brief Неактивные при старте действия
-     */
-    QList<QAction*> g_disableOnStartActions;
-
-    /**
-     * @brief Отключить некоторые действия
-     *
-     * Используется при старте приложения, пока не загружен какой-либо проект
-     */
-    static void disableActionsOnStart() {
-        foreach (QAction* action, g_disableOnStartActions) {
-            action->setEnabled(false);
-        }
-    }
-
-    /**
-     * @brief Активировать отключенные при старте действия
-     */
-    static void enableActionsOnProjectOpen() {
-        foreach (QAction* action, g_disableOnStartActions) {
-            action->setEnabled(true);
-        }
-    }
-
-    /**
-     * @brief Получить путь к папке проектов
-     */
-    static QString projectsFolderPath() {
-        QString projectsFolderPath =
-                DataStorageLayer::StorageFacade::settingsStorage()->value(
-                    "application/project-files",
-                    DataStorageLayer::SettingsStorage::ApplicationSettings);
-        if (projectsFolderPath.isEmpty()) {
-            projectsFolderPath = ProjectsManager::defaultLocation();
-        }
-        return projectsFolderPath;
-    }
-
-    /**
-     * @brief Сохранить путь к папке проектов
-     */
-    static void saveProjectsFolderPath(const QString& _path) {
-        DataStorageLayer::StorageFacade::settingsStorage()->setValue(
-                    "application/project-files",
-                    QFileInfo(_path).absoluteDir().absolutePath(),
-                    DataStorageLayer::SettingsStorage::ApplicationSettings);
-    }
-
-    static void updateWindowModified(QWidget* _widget, bool _modified) {
+/**
+ * @brief Суффикс "изменено" для заголовка окна добавляемый в маке
+ */
 #ifdef Q_OS_MAC
-        static const QString suffix =
-                QApplication::translate("ManagementLayer::ApplicationManager", MAC_CHANGED_SUFFIX);
-        if (_modified) {
-            if (!_widget->windowTitle().endsWith(suffix)) {
-                _widget->setWindowTitle(_widget->windowTitle() + suffix);
-            }
-        } else {
-            if (_widget->windowTitle().endsWith(suffix)) {
-                _widget->setWindowTitle(_widget->windowTitle().remove(suffix));
-            }
-        }
+const char* MAC_CHANGED_SUFFIX
+    = QT_TRANSLATE_NOOP("ManagementLayer::ApplicationManager", " - changed");
 #endif
-        _widget->setWindowModified(_modified);
+
+/**
+ * @brief Флаги доступности синхронизации
+ */
+/** @{ */
+const bool SYNC_AVAILABLE = true;
+const bool SYNC_UNAVAILABLE = false;
+/** @} */
+
+/**
+ * @brief Неактивные при старте действия
+ */
+QList<QAction*> g_disableOnStartActions;
+
+/**
+ * @brief Отключить некоторые действия
+ *
+ * Используется при старте приложения, пока не загружен какой-либо проект
+ */
+static void disableActionsOnStart()
+{
+    foreach (QAction* action, g_disableOnStartActions) {
+        action->setEnabled(false);
     }
 }
 
+/**
+ * @brief Активировать отключенные при старте действия
+ */
+static void enableActionsOnProjectOpen()
+{
+    foreach (QAction* action, g_disableOnStartActions) {
+        action->setEnabled(true);
+    }
+}
 
-ApplicationManager::ApplicationManager(QObject *parent) :
-    QObject(parent),
-    m_view(new ApplicationView),
-    m_menu(new FlatButton(m_view)),
-    m_menuSecondary(new QLabel(m_view)),
-    m_tabs(new SideTabBar(m_view)),
-    m_tabsSecondary(new SideTabBar(m_view)),
-    m_tabsWidgets(new QStackedWidget(m_view)),
-    m_tabsWidgetsSecondary(new QStackedWidget(m_view)),
-    m_splitter(new QSplitter(m_view)),
-    m_projectsManager(new ProjectsManager(this)),
-    m_startUpManager(new StartUpManager(this, m_view)),
-    m_researchManager(new ResearchManager(this, m_view)),
-    m_scenarioManager(new ScenarioManager(this, m_view)),
-    m_statisticsManager(new StatisticsManager(this, m_view)),
-    m_settingsManager(new SettingsManager(this, m_view)),
-    m_importManager(new ImportManager(this, m_view)),
-    m_exportManager(new ExportManager(this, m_view)),
-    m_synchronizationManager(new SynchronizationManager(this, m_view))
+/**
+ * @brief Получить путь к папке проектов
+ */
+static QString projectsFolderPath()
+{
+    QString projectsFolderPath = DataStorageLayer::StorageFacade::settingsStorage()->value(
+        "application/project-files", DataStorageLayer::SettingsStorage::ApplicationSettings);
+    if (projectsFolderPath.isEmpty()) {
+        projectsFolderPath = ProjectsManager::defaultLocation();
+    }
+    return projectsFolderPath;
+}
+
+/**
+ * @brief Сохранить путь к папке проектов
+ */
+static void saveProjectsFolderPath(const QString& _path)
+{
+    DataStorageLayer::StorageFacade::settingsStorage()->setValue(
+        "application/project-files", QFileInfo(_path).absoluteDir().absolutePath(),
+        DataStorageLayer::SettingsStorage::ApplicationSettings);
+}
+
+static void updateWindowModified(QWidget* _widget, bool _modified)
+{
+    if (!ProjectsManager::currentProject().isWritable()) {
+        return;
+    }
+
+#ifdef Q_OS_MAC
+    static const QString suffix
+        = QApplication::translate("ManagementLayer::ApplicationManager", MAC_CHANGED_SUFFIX);
+    if (_modified) {
+        if (!_widget->windowTitle().endsWith(suffix)) {
+            _widget->setWindowTitle(_widget->windowTitle() + suffix);
+        }
+    } else {
+        if (_widget->windowTitle().endsWith(suffix)) {
+            _widget->setWindowTitle(_widget->windowTitle().remove(suffix));
+        }
+    }
+#endif
+    _widget->setWindowModified(_modified);
+}
+
+/**
+ * @brief Получить язык для подстановки в ссылки на сайте
+ */
+static QString urlLanguage()
+{
+    switch (QLocale().language()) {
+    case QLocale::Russian:
+    case QLocale::Ukrainian:
+    case QLocale::Kazakh: {
+        return QString();
+    }
+
+    default: {
+        return "en/";
+    }
+    }
+}
+} // namespace
+
+
+ApplicationManager::ApplicationManager(QObject* parent)
+    : QObject(parent)
+    , m_view(new ApplicationView)
+    , m_menu(new FlatButton(m_view))
+    , m_menuSecondary(new QLabel(m_view))
+    , m_tabs(new SideTabBar(m_view))
+    , m_tabsSecondary(new SideTabBar(m_view))
+    , m_tabsWidgets(new QStackedWidget(m_view))
+    , m_tabsWidgetsSecondary(new QStackedWidget(m_view))
+    , m_splitter(new QSplitter(m_view))
+    , m_projectsManager(new ProjectsManager(this))
+    , m_menuManager(new MenuManager(this, m_view))
+    , m_startUpManager(new StartUpManager(this, m_view))
+    , m_researchManager(new ResearchManager(this, m_view))
+    , m_scenarioManager(new ScenarioManager(this, m_view))
+    , m_statisticsManager(new StatisticsManager(this, m_view))
+    , m_toolsManager(new ToolsManager(this, m_view))
+    , m_settingsManager(new SettingsManager(this, m_view))
+    , m_importManager(new ImportManager(this, m_view))
+    , m_exportManager(new ExportManager(this, m_view))
+    , m_synchronizationManager(new SynchronizationManager(this, m_view))
 {
     initControllers();
     initView();
@@ -208,20 +243,44 @@ ApplicationManager::ApplicationManager(QObject *parent) :
 ApplicationManager::~ApplicationManager()
 {
     m_view->deleteLater();
+
+#ifdef Q_OS_MAC
+    m_menuBar->deleteLater();
+#endif
 }
 
 void ApplicationManager::exec(const QString& _fileToOpen)
 {
+    //
+    // Настроим приложение
+    //
     reloadApplicationSettings();
     loadViewState();
+
+    //
+    // Если были авторизованы покажем информацию из кэша
+    //
+    m_synchronizationManager->fakeLogin();
+
+    //
+    // Покажем приложение
+    //
     m_view->show();
 
+    //
+    // При необходимости откроем проект поданный в качестве аргументов
+    //
     if (!_fileToOpen.isEmpty()) {
         aboutLoad(_fileToOpen);
     }
+
+    //
+    // Переводим состояние приложение в рабочий режим
+    //
+    m_state = ApplicationState::Working;
 }
 
-void ApplicationManager::openFile(const QString &_fileToOpen)
+void ApplicationManager::openFile(const QString& _fileToOpen)
 {
     aboutLoad(_fileToOpen);
 }
@@ -241,9 +300,9 @@ void ApplicationManager::makeStartUpChecks()
     //
     // И авторизуемся
     //
-    m_startUpManager->setProgressLoginLabel(true);
+    m_menuManager->setProgressLoginLabel(true);
     if (!m_synchronizationManager->autoLogin()) {
-        m_startUpManager->setProgressLoginLabel(false);
+        m_menuManager->setProgressLoginLabel(false);
     }
 }
 
@@ -286,9 +345,11 @@ void ApplicationManager::aboutCreateNew()
                     //
                     // Старый вордовский формат не поддерживаем
                     //
-                    if (dlg.importFilePath().toLower().endsWith(MS_DOC_EXTENSION)) {
-                        QLightBoxMessage::critical(&dlg, tr("File format not supported"),
-                            tr("Microsoft <b>DOC</b> files are not supported. You need save it to <b>DOCX</b> file and reimport."));
+                    if (dlg.importFilePath().toLower().endsWith(kMsDocExtension)) {
+                        QLightBoxMessage::critical(
+                            &dlg, tr("File format not supported"),
+                            tr("Microsoft <b>DOC</b> files are not supported. You need save it to "
+                               "<b>DOCX</b> file and reimport."));
                     }
                     //
                     // Если всё в порядке
@@ -322,7 +383,8 @@ void ApplicationManager::aboutCreateNew()
     }
 }
 
-void ApplicationManager::createNewLocalProject(const QString& _filePath, const QString& _importFilePath)
+void ApplicationManager::createNewLocalProject(const QString& _filePath,
+                                               const QString& _importFilePath)
 {
     QString newProjectFilePath = _filePath;
 
@@ -338,9 +400,15 @@ void ApplicationManager::createNewLocalProject(const QString& _filePath, const Q
         //
         // ... установим расширение, если не задано
         //
-        if (!newProjectFilePath.endsWith(PROJECT_FILE_EXTENSION)) {
-            newProjectFilePath.append(PROJECT_FILE_EXTENSION);
+        if (!newProjectFilePath.endsWith(kProjectFleExtension)) {
+            newProjectFilePath.append(kProjectFleExtension);
         }
+
+        //
+        // ... папки, в которую пользователь хочет писать может и не быть,
+        //     создадим на всякий случай, чтобы его не мучать
+        //
+        QDir::root().mkpath(QFileInfo(newProjectFilePath).absolutePath());
 
         //
         // ... проверяем, можем ли мы писать в выбранный файл
@@ -370,33 +438,28 @@ void ApplicationManager::createNewLocalProject(const QString& _filePath, const Q
             //
             // ... перейдём к редактированию
             //
-            goToEditCurrentProject();
-            //
-            // ... и импортируем, если надо
-            //
-            if (!_importFilePath.isEmpty()) {
-                m_importManager->importScenario(m_scenarioManager->scenario(), _importFilePath);
-            }
+            goToEditCurrentProject(_importFilePath);
         }
         //
         // Если невозможно записать в файл, предупреждаем пользователя и отваливаемся
         //
         else {
             const QFileInfo fileInfo(newProjectFilePath);
+
             //
             // ... предупреждаем
             //
             QString errorMessage;
             if (!fileInfo.dir().exists()) {
-                errorMessage =
-                    tr("You try to create project in nonexistent folder <b>%1</b>. Please, choose other location for new project.")
-                    .arg(fileInfo.dir().absolutePath());
+                errorMessage = tr("You try to create project in nonexistent folder <b>%1</b>. "
+                                  "Please, choose other location for new project.")
+                                   .arg(fileInfo.dir().absolutePath());
             } else if (fileInfo.exists()) {
-                errorMessage =
-                    tr("Can't write to file. Maybe it opened in other application. Please, close it and retry.");
+                errorMessage = tr("Can't write to file. Maybe it is opened by another application. "
+                                  "Please close it and retry.");
             } else {
-                errorMessage =
-                    tr("Can't write to file. Check permissions to write in choosed folder. Please, choose other folder.");
+                errorMessage = tr("Can't write to file. Check permissions to write in choosed "
+                                  "folder. Please, choose other folder.");
             }
             QLightBoxMessage::critical(m_view, tr("Create project error"), errorMessage);
             //
@@ -407,7 +470,8 @@ void ApplicationManager::createNewLocalProject(const QString& _filePath, const Q
     }
 }
 
-void ApplicationManager::createNewRemoteProject(const QString& _projectName, const QString& _importFilePath)
+void ApplicationManager::createNewRemoteProject(const QString& _projectName,
+                                                const QString& _importFilePath)
 {
     //
     // Закроем текущий проект
@@ -420,6 +484,13 @@ void ApplicationManager::createNewRemoteProject(const QString& _projectName, con
     const int newProjectId = m_synchronizationManager->createProject(_projectName);
 
     //
+    // Проверяем удалось ли создать проект
+    //
+    if (newProjectId == Project::kInvalidId) {
+        return;
+    }
+
+    //
     // Переключаемся на работу с новым проектом
     //
     const bool isRemote = false;
@@ -427,22 +498,14 @@ void ApplicationManager::createNewRemoteProject(const QString& _projectName, con
         //
         // ... перейдём к редактированию
         //
-        goToEditCurrentProject();
-        //
-        // ... и импортируем, если надо
-        //
-        if (!_importFilePath.isEmpty()) {
-            m_importManager->importScenario(m_scenarioManager->scenario(), _importFilePath);
-        }
+        goToEditCurrentProject(_importFilePath);
     }
     //
     // Если переключиться не удалось, сообщаем пользователю об ошибке
     //
     else {
-        QLightBoxMessage::critical(
-            m_view,
-            tr("Can't open project file"),
-            DatabaseLayer::Database::openFileError());
+        QLightBoxMessage::critical(m_view, tr("Can't open project file"),
+                                   DatabaseLayer::Database::openFileError());
 
         //
         // ... и перезапускаем создание проекта
@@ -462,18 +525,26 @@ void ApplicationManager::aboutSaveAs()
     //
     // Изначально высвечивается текущее имя проекта
     //
-    const QString projectPath = ProjectsManager::currentProject().path();
+    QString projectPath = ProjectsManager::currentProject().path();
+    const Project& currentProject = ProjectsManager::currentProject();
+    if (currentProject.isRemote()) {
+        //
+        // Для удаленных проектов используем имя проекта + id проекта
+        // и сохраняем в папку вновь создаваемых проектов
+        //
+        projectPath = projectsFolderPath() + QDir::separator()
+            + QString("%1 [%2]%3")
+                  .arg(currentProject.name())
+                  .arg(currentProject.id())
+                  .arg(kProjectFleExtension);
+    }
 
     //
     // Получим имя файла для сохранения
     //
-    QString saveAsProjectFileName =
-            QFileDialog::getSaveFileName(
-                m_view,
-                tr("Choose file for save project"),
-                projectPath,
-                tr ("Scenarist project files (*%1)").arg(PROJECT_FILE_EXTENSION)
-                );
+    QString saveAsProjectFileName = QFileDialog::getSaveFileName(
+        m_view, tr("Choose file to save project"), projectPath,
+        tr("Scenarist project files (*%1)").arg(kProjectFleExtension));
 
     //
     // Если файл выбран
@@ -482,8 +553,8 @@ void ApplicationManager::aboutSaveAs()
         //
         // ... установим расширение, если не задано
         //
-        if (!saveAsProjectFileName.endsWith(PROJECT_FILE_EXTENSION)) {
-            saveAsProjectFileName.append(PROJECT_FILE_EXTENSION);
+        if (!saveAsProjectFileName.endsWith(kProjectFleExtension)) {
+            saveAsProjectFileName.append(kProjectFleExtension);
         }
 
         //
@@ -524,16 +595,17 @@ void ApplicationManager::aboutSaveAs()
                 // ... сохраняем изменения
                 //
                 aboutSave();
-                m_view->setWindowModified(true);
+                updateWindowModified(m_view, true);
 
                 //
                 // ... обновим заголовок
                 //
                 updateWindowTitle();
             } else {
-                QLightBoxMessage::critical(m_view, tr("Saving error"),
+                QLightBoxMessage::critical(
+                    m_view, tr("Saving error"),
                     tr("Can't save project as <b>%1</b>.<br/> Please check permissions and retry.")
-                    .arg(saveAsProjectFileName));
+                        .arg(saveAsProjectFileName));
             }
         }
 
@@ -547,21 +619,38 @@ void ApplicationManager::aboutSaveAs()
 void ApplicationManager::aboutSave()
 {
     //
+    // Избегаем рекурсии
+    //
+    const auto canRun = RunOnce::tryRun(Q_FUNC_INFO);
+    if (!canRun) {
+        return;
+    }
+
+    //
+    // Сохраняем только, если приложение находится в рабочем состоянии
+    //
+    if (m_state != ApplicationState::Working) {
+        return;
+    }
+
+    //
     // Если какие-то данные изменены
     //
     if (m_view->isWindowModified()) {
-        //
-        // Перед сохранением проверяем достаточно ли места на диске, если нет, то уведомляем пользователя
-        //
-        const QStorageInfo storageInfo(DatabaseLayer::Database::currentFile());
-        if (storageInfo.bytesAvailable()/1000/1000 < 50) {
-            QLightBoxMessage::warning(
-                        m_view,
-                        tr("Possible save error"),
-                        tr("You have less than 50 megabytes of free disk space. This can lead to problems "
-                           "with saving the project. We recommend that you free up more space "
-                           "and check whether the project is saved correctly."));
-        }
+        //        //
+        //        // Перед сохранением проверяем достаточно ли места на диске, если нет, то
+        //        уведомляем пользователя
+        //        //
+        //        const QStorageInfo storageInfo(DatabaseLayer::Database::currentFile());
+        //        if (storageInfo.istorageInfo.bytesAvailable()/1000/1000 < 50) {
+        //            QLightBoxMessage::warning(
+        //                        m_view,
+        //                        tr("Possible save error"),
+        //                        tr("You have less than 50 megabytes of free disk space. This can
+        //                        lead to problems "
+        //                           "with saving the project. We recommend that you free up more
+        //                           space " "and check whether the project is saved correctly."));
+        //        }
 
         //
         // Управляющие должны сохранить несохранённые данные
@@ -583,21 +672,24 @@ void ApplicationManager::aboutSave()
             //
             // Изменим статус окна на сохранение изменений
             //
-            ::updateWindowModified(m_view, false);
+            updateWindowModified(m_view, false);
 
             //
             // Если необходимо создадим резервную копию закрываемого файла
             //
-            QString baseBackupName = "";
+            QString baseBackupName;
             const Project& currentProject = ProjectsManager::currentProject();
             if (currentProject.isRemote()) {
                 //
                 // Для удаленных проектов имя бекапа - имя проекта + id проекта
-                // В случае, если имя удаленного проекта изменилось, то бэкапы со старым именем останутся навсегда
+                // В случае, если имя удаленного проекта изменилось, то бэкапы со старым именем
+                // останутся навсегда
                 //
-                baseBackupName = QString("%1 [%2]").arg(currentProject.name()).arg(currentProject.id());
+                baseBackupName
+                    = QString("%1 [%2]").arg(currentProject.name()).arg(currentProject.id());
             }
-            QtConcurrent::run(&m_backupHelper, &BackupHelper::saveBackup, ProjectsManager::currentProject().path(), baseBackupName);
+            QtConcurrent::run(&m_backupHelper, &BackupHelper::saveBackup,
+                              ProjectsManager::currentProject().path(), baseBackupName);
         }
         //
         // А если ошибка сохранения, то делаем дополнительные проверки и работаем с пользователем
@@ -610,18 +702,20 @@ void ApplicationManager::aboutSave()
                 //
                 // ... то у нас случилась какая-то внутренняя ошибка базы данных
                 //
-                const QDialogButtonBox::StandardButton messageResult =
-                        QLightBoxMessage::critical(m_view, tr("Saving error"),
-                                                   tr("Can't write you changes to project. There is some internal database error: %1 "
-                                                      "Please check that file is exists and you have permissions to write in it. Retry to save?")
-                                                   .arg(DatabaseLayer::Database::lastError()),
-                                                   QDialogButtonBox::Yes | QDialogButtonBox::No, QDialogButtonBox::Yes);
+                const QDialogButtonBox::StandardButton messageResult = QLightBoxMessage::critical(
+                    m_view, tr("Saving error"),
+                    tr("Can't write your changes to the project. There is a internal database "
+                       "error: %1 "
+                       "Please check, if this file exists and if you have permissions to write. "
+                       "Retry (to save)?")
+                        .arg(DatabaseLayer::Database::lastError()),
+                    QDialogButtonBox::Yes | QDialogButtonBox::No, QDialogButtonBox::Yes);
                 //
                 // ... пробуем повторно открыть базу данных и записать в неё изменения
                 //
                 if (messageResult == QDialogButtonBox::Yes) {
                     DatabaseLayer::Database::setCurrentFile(DatabaseLayer::Database::currentFile());
-                    aboutSave();
+                    QTimer::singleShot(0, this, &ApplicationManager::aboutSave);
                 }
             }
             //
@@ -629,14 +723,16 @@ void ApplicationManager::aboutSave()
             //
             else {
                 //
-                // ... возможно файл был на флешке, а она отошла, или файл был переименован во время работы программы
+                // ... возможно файл был на флешке, а она отошла, или файл был переименован во время
+                // работы программы
                 //
-                const QDialogButtonBox::StandardButton messageResult =
-                        QLightBoxMessage::critical(m_view, tr("Saving error"),
-                            tr("Can't write you changes to project located at <b>%1</b> becourse file isn't exist. "
-                               "Please move file back and retry to save. Retry to save?")
-                                .arg(DatabaseLayer::Database::currentFile()),
-                            QDialogButtonBox::Yes | QDialogButtonBox::No, QDialogButtonBox::Yes);
+                const QDialogButtonBox::StandardButton messageResult = QLightBoxMessage::critical(
+                    m_view, tr("Saving error"),
+                    tr("Can't write your changes to project located at <b>%1</b>, because the file "
+                       "doesn't exist. "
+                       "Please move the file back and retry saving. Retry saving")
+                        .arg(DatabaseLayer::Database::currentFile()),
+                    QDialogButtonBox::Yes | QDialogButtonBox::No, QDialogButtonBox::Yes);
                 //
                 // ... пробуем повторно сохранить изменения в базу данных
                 //
@@ -656,6 +752,30 @@ void ApplicationManager::aboutSave()
     }
 }
 
+void ApplicationManager::aboutStartNewVersion()
+{
+    UserInterface::ProjectVersionDialog versionDialog(m_view);
+    versionDialog.setPreviousVersions(
+        DataStorageLayer::StorageFacade::scriptVersionStorage()->all());
+    if (versionDialog.exec() == QLightBoxDialog::Accepted) {
+        //
+        // Сперва сохраним текст сценария
+        //
+        m_scenarioManager->saveCurrentProject();
+        //
+        // А уж потом положим версию в базу данных
+        //
+        DataStorageLayer::StorageFacade::scriptVersionStorage()->storeScriptVersion(
+            DataStorageLayer::StorageFacade::userName(), versionDialog.versionDateTime(),
+            versionDialog.versionColor(), versionDialog.versionName(),
+            versionDialog.versionDescription(), m_scenarioManager->scenario()->save());
+        //
+        // И обнови заголовок окна, чтобы отразить в нём новую версию
+        //
+        updateWindowTitle();
+    }
+}
+
 void ApplicationManager::saveCurrentProjectSettings(const QString& _projectPath)
 {
     //
@@ -668,15 +788,12 @@ void ApplicationManager::saveCurrentProjectSettings(const QString& _projectPath)
     }
     DataStorageLayer::StorageFacade::settingsStorage()->setValue(
         QString("projects/%1/last-active-module_left").arg(_projectPath),
-        QString::number(tabIndexToSave),
-        DataStorageLayer::SettingsStorage::ApplicationSettings
-        );
+        QString::number(tabIndexToSave), DataStorageLayer::SettingsStorage::ApplicationSettings);
 
     DataStorageLayer::StorageFacade::settingsStorage()->setValue(
         QString("projects/%1/last-active-module_right").arg(_projectPath),
         QString::number(m_tabsSecondary->currentTab()),
-        DataStorageLayer::SettingsStorage::ApplicationSettings
-        );
+        DataStorageLayer::SettingsStorage::ApplicationSettings);
 }
 
 void ApplicationManager::aboutLoad(const QString& _fileName)
@@ -694,13 +811,9 @@ void ApplicationManager::aboutLoad(const QString& _fileName)
         // Если имя файла не определено, выберем его в диалоге выбора файла
         //
         if (loadProjectFileName.isEmpty()) {
-            loadProjectFileName =
-                    QFileDialog::getOpenFileName(
-                        m_view,
-                        tr("Choose project file to open"),
-                        projectsFolderPath(),
-                        tr ("Scenarist project files (*%1)").arg(PROJECT_FILE_EXTENSION)
-                        );
+            loadProjectFileName = QFileDialog::getOpenFileName(
+                m_view, tr("Choose project file to open"), projectsFolderPath(),
+                tr("Scenarist project files (*%1)").arg(kProjectFleExtension));
         }
 
         //
@@ -722,12 +835,14 @@ void ApplicationManager::aboutLoad(const QString& _fileName)
                 //     но даём возможность игнорировать её и всё равно попробовать открыть файл
                 //
                 if (QLightBoxMessage::critical(m_view, tr("Can't open project file"),
-                        DatabaseLayer::Database::openFileError() + "\n\n" + tr("Ignore and try to open project?"),
-                        QDialogButtonBox::No | QDialogButtonBox::Open)
+                                               DatabaseLayer::Database::openFileError() + "\n\n"
+                                                   + tr("Ignore and try to open project?"),
+                                               QDialogButtonBox::No | QDialogButtonBox::Open)
                     == QDialogButtonBox::Open) {
                     const bool isLocal = true;
                     const bool forced = true;
-                    canOpenProject = m_projectsManager->setCurrentProject(loadProjectFileName, isLocal, forced);
+                    canOpenProject = m_projectsManager->setCurrentProject(loadProjectFileName,
+                                                                          isLocal, forced);
                 }
             }
 
@@ -747,7 +862,7 @@ void ApplicationManager::aboutLoad(const QString& _fileName)
         //
         // Изменим статус окна на сохранение изменений
         //
-        ::updateWindowModified(m_view, false);
+        updateWindowModified(m_view, false);
     }
 }
 
@@ -757,34 +872,40 @@ void ApplicationManager::loadCurrentProjectSettings(const QString& _projectPath)
     // Восстановим используемые модули
     //
 
-    int lastModuleLeft =
-            DataStorageLayer::StorageFacade::settingsStorage()->value(
-                QString("projects/%1/last-active-module_left").arg(_projectPath),
-                DataStorageLayer::SettingsStorage::ApplicationSettings,
-                QString::number(RESEARCH_TAB_INDEX)
-                ).toInt();
+    int lastModuleLeft
+        = DataStorageLayer::StorageFacade::settingsStorage()
+              ->value(QString("projects/%1/last-active-module_left").arg(_projectPath),
+                      DataStorageLayer::SettingsStorage::ApplicationSettings,
+                      QString::number(RESEARCH_TAB_INDEX))
+              .toInt();
     //
     // ... если последней используемой была стартовая страница или настройки,
     //     покажем разработку
     //
-    if (lastModuleLeft == STARTUP_TAB_INDEX
-        || lastModuleLeft == SETTINGS_TAB_INDEX) {
+    if (lastModuleLeft == STARTUP_TAB_INDEX || lastModuleLeft == SETTINGS_TAB_INDEX) {
         lastModuleLeft = RESEARCH_TAB_INDEX;
     }
     m_tabs->setCurrentTab(lastModuleLeft);
 
-    const int lastModuleRight =
-            DataStorageLayer::StorageFacade::settingsStorage()->value(
-                QString("projects/%1/last-active-module_right").arg(_projectPath),
-                DataStorageLayer::SettingsStorage::ApplicationSettings,
-                QString::number(SCENARIO_TAB_INDEX)
-                ).toInt();
+    const int lastModuleRight
+        = DataStorageLayer::StorageFacade::settingsStorage()
+              ->value(QString("projects/%1/last-active-module_right").arg(_projectPath),
+                      DataStorageLayer::SettingsStorage::ApplicationSettings,
+                      QString::number(SCENARIO_TAB_INDEX))
+              .toInt();
     m_tabsSecondary->setCurrentTab(lastModuleRight);
 }
 
 void ApplicationManager::aboutShowHelp()
 {
-    QDesktopServices::openUrl(QUrl("https://kitscenarist.ru/help/"));
+    const QString url = QString("https://kitscenarist.ru/%1help/").arg(urlLanguage());
+    QDesktopServices::openUrl(QUrl(url));
+}
+
+void ApplicationManager::aboutShowCrowdfinding()
+{
+    QDesktopServices::openUrl(QUrl("https://boomstarter.ru/projects/dimkanovikov/"
+                                   "kit_stsenarist_-_programma_dlya_sozdaniya_istoriy"));
 }
 
 void ApplicationManager::aboutLoadFromRecent(const QModelIndex& _projectIndex)
@@ -816,16 +937,43 @@ void ApplicationManager::aboutLoadFromRecent(const QModelIndex& _projectIndex)
             //     но даём возможность игнорировать её и всё равно попробовать открыть файл
             //
             if (QLightBoxMessage::critical(m_view, tr("Can't open project file"),
-                    DatabaseLayer::Database::openFileError() + "\n\n" + tr("Ignore and try to open project?"),
-                    QDialogButtonBox::No | QDialogButtonBox::Open)
+                                           DatabaseLayer::Database::openFileError() + "\n\n"
+                                               + tr("Ignore and try to open project?"),
+                                           QDialogButtonBox::No | QDialogButtonBox::Open)
                 == QDialogButtonBox::Open) {
                 const bool isLocal = true;
                 const bool forced = true;
-                canOpenProject = m_projectsManager->setCurrentProject(_projectIndex, isLocal, forced);
+                canOpenProject
+                    = m_projectsManager->setCurrentProject(_projectIndex, isLocal, forced);
             }
         }
 
         if (canOpenProject) {
+            //
+            // ... если файл доступен только для чтения, уведомим об этом пользователя
+            //
+            if (!ProjectsManager::currentProject().isWritable()) {
+                QString messageText = tr(
+                    "If you want to edit a file, please check it's permissions for your account.");
+
+                const auto backupsDir = DataStorageLayer::StorageFacade::settingsStorage()->value(
+                    "application/save-backups-folder",
+                    DataStorageLayer::SettingsStorage::ApplicationSettings);
+                if (m_projectsManager->currentProject().path().startsWith(
+                        QDir::toNativeSeparators(backupsDir))) {
+                    messageText = tr("The file you open located in the backups folder.\n\n"
+                                     "You can no longer edit files from the backups folder. "
+                                     "Files in this folder used only for content recovery. "
+                                     "Please use another folder to save and store the files you "
+                                     "are working on.\n\n"
+                                     "Now, you should copy your file from the backups folder "
+                                     "outside via file browser, "
+                                     "or via the \"Menu -> Save current project as...\" option.");
+                }
+                QLightBoxMessage::information(m_view, tr("A file will be opened in read-only mode"),
+                                              messageText);
+            }
+
             //
             // ... перейдём к редактированию
             //
@@ -837,11 +985,41 @@ void ApplicationManager::aboutLoadFromRecent(const QModelIndex& _projectIndex)
 void ApplicationManager::hideLocalProject(const QModelIndex& _index)
 {
     const QString question = tr("Are you sure to hide project <b>%1</b> from recent?")
-                             .arg(m_projectsManager->project(_index).name());
-    if (QLightBoxMessage::question(m_view, QString::null, question)
-        == QDialogButtonBox::Yes) {
+                                 .arg(m_projectsManager->project(_index).name());
+    if (QLightBoxMessage::question(m_view, QString::null, question) == QDialogButtonBox::Yes) {
         m_projectsManager->hideProjectFromLocal(_index);
     }
+}
+
+void ApplicationManager::moveLocalProjectToCloud(const QModelIndex& _index)
+{
+    if (!_index.isValid()) {
+        return;
+    }
+
+    if (!saveIfNeeded()) {
+        return;
+    }
+
+    if (!m_synchronizationManager->isLogged()) {
+        QLightBoxMessage::warning(m_view, tr("Moving project to the cloud failed"),
+                                  tr("For moving projects to the cloud you should be logged in the "
+                                     "KIT Scenarist cloud service."));
+        return;
+    }
+
+    if (!m_synchronizationManager->isSubscriptionActive()) {
+        QLightBoxMessage::warning(m_view, tr("Moving project to the cloud failed"),
+                                  tr("For moving projects to the cloud your subscription in the "
+                                     "KIT Scenarist cloud service should be active."));
+        return;
+    }
+
+    //
+    // Получим путь до файла и название проекта
+    //
+    const Project project = m_projectsManager->project(_index);
+    createNewRemoteProject(project.name(), project.path());
 }
 
 void ApplicationManager::aboutLoadFromRemote(const QModelIndex& _projectIndex)
@@ -877,10 +1055,8 @@ void ApplicationManager::aboutLoadFromRemote(const QModelIndex& _projectIndex)
         // Если переключиться не удалось, сообщаем пользователю об ошибке
         //
         else {
-            QLightBoxMessage::critical(
-                m_view,
-                tr("Can't open project file"),
-                DatabaseLayer::Database::openFileError());
+            QLightBoxMessage::critical(m_view, tr("Can't open project file"),
+                                       DatabaseLayer::Database::openFileError());
         }
     }
 }
@@ -889,9 +1065,8 @@ void ApplicationManager::editRemoteProjectName(const QModelIndex& _index)
 {
     const bool IS_REMOTE = false;
     Project& project = m_projectsManager->project(_index, IS_REMOTE);
-    const QString newName =
-            QLightBoxInputDialog::getText(m_view, tr("Change project name"),
-                tr("Enter new name for project"), project.name());
+    const QString newName = QLightBoxInputDialog::getText(
+        m_view, tr("Change project name"), tr("Enter new name for project"), project.name());
     //
     // Если пользователь действительно хочет переименовать проект
     //
@@ -904,7 +1079,8 @@ void ApplicationManager::editRemoteProjectName(const QModelIndex& _index)
         }
         //
         // ... переименуем
-        //     это действие приводит к перезагрузке списка проектов, так что более делать ничего не надо
+        //     это действие приводит к перезагрузке списка проектов, так что более делать ничего не
+        //     надо
         //
         m_synchronizationManager->updateProjectName(project.id(), newName);
         //
@@ -923,8 +1099,16 @@ void ApplicationManager::removeRemoteProject(const QModelIndex& _index)
     // Если пользователь является владельцем файла, то он может его удалить
     //
     if (project.isUserOwner()) {
-        if (QLightBoxMessage::question(m_view, QString::null, tr("Are you sure to remove project <b>%1</b>?").arg(project.name()))
+        if (QLightBoxMessage::question(
+                m_view, QString::null,
+                tr("Are you sure to remove project <b>%1</b>?").arg(project.name()))
             == QDialogButtonBox::Yes) {
+            //
+            // Если в данный момент открыт проект, который пользователь хочет удалить, закрываем его
+            //
+            if (project == m_projectsManager->currentProject()) {
+                closeCurrentProject();
+            }
             m_synchronizationManager->removeProject(project.id());
         }
     }
@@ -932,8 +1116,18 @@ void ApplicationManager::removeRemoteProject(const QModelIndex& _index)
     // А если нет, то только отписаться от него
     //
     else {
-        if (QLightBoxMessage::question(m_view, QString::null, tr("Are you sure to remove your subscription to project <b>%1</b>?").arg(project.name()))
+        if (QLightBoxMessage::question(
+                m_view, QString::null,
+                tr("Are you sure to remove your subscription to project <b>%1</b>?")
+                    .arg(project.name()))
             == QDialogButtonBox::Yes) {
+            //
+            // Если в данный момент открыт проект, от которого пользователь хочет отписаться,
+            // закрываем его
+            //
+            if (project == m_projectsManager->currentProject()) {
+                closeCurrentProject();
+            }
             m_synchronizationManager->unshareProject(project.id());
         }
     }
@@ -953,9 +1147,11 @@ void ApplicationManager::unshareRemoteProject(const QModelIndex& _index, const Q
 {
     const bool IS_REMOTE = false;
     const Project project = m_projectsManager->project(_index, IS_REMOTE);
-    if (QLightBoxMessage::question(m_view, QString::null, tr("Are you sure to remove subscription of user <b>%1</b> to project <b>%2</b>?")
-                                   .arg(_userEmail)
-                                   .arg(project.name()))
+    if (QLightBoxMessage::question(
+            m_view, QString::null,
+            tr("Are you sure to remove subscription of user <b>%1</b> to project <b>%2</b>?")
+                .arg(_userEmail)
+                .arg(project.name()))
         == QDialogButtonBox::Yes) {
         m_synchronizationManager->unshareProject(project.id(), _userEmail);
     }
@@ -964,14 +1160,14 @@ void ApplicationManager::unshareRemoteProject(const QModelIndex& _index, const Q
 void ApplicationManager::setSyncIndicator()
 {
     const bool isActiveInternet = m_synchronizationManager->isInternetConnectionActive();
-    const bool isRemoteProject = m_projectsManager->isCurrentProjectValid() &&
-            m_projectsManager->currentProject().isRemote();
+    const bool isRemoteProject = m_projectsManager->isCurrentProjectValid()
+        && m_projectsManager->currentProject().isRemote();
 
     QString iconPath;
     QString indicatorTitle;
     QString indicatorText;
     QColor waveColor;
-    if (isActiveInternet){
+    if (isActiveInternet) {
         //
         // Если интернет есть, надо понять, с каким типом проекта работает пользователь
         //
@@ -980,20 +1176,20 @@ void ApplicationManager::setSyncIndicator()
             //
             // Облачный проект
             //
-            iconPath = ":/Graphics/Icons/Indicator/synced.png";
+            iconPath = ":/Graphics/Iconset/Indicator/synced.png";
             indicatorText = tr("Project synchronized");
         } else {
             //
             // Локальный проект
             //
-            iconPath = ":/Graphics/Icons/Indicator/connected.png";
+            iconPath = ":/Graphics/Iconset/Indicator/connected.png";
         }
         waveColor = QColor(0, 255, 0, 40);
     } else {
         //
         // Если интернета нет, то всегда показываем значок отключенного интернета
         //
-        iconPath = ":/Graphics/Icons/Indicator/disconnected.png";
+        iconPath = ":/Graphics/Iconset/Indicator/disconnected.png";
         indicatorTitle = tr("Connection inactive");
         indicatorText = isRemoteProject ? tr("Project didn't synchronized") : QString::null;
         waveColor = QColor(255, 0, 0, 40);
@@ -1011,7 +1207,8 @@ void ApplicationManager::aboutUpdateLastChangeInfo()
     // Берём последнее изменение базы данных
     //
     const auto databaseChange = DataStorageLayer::StorageFacade::databaseHistoryStorage()->last();
-    QDateTime changeDatetime = QDateTime::fromString(databaseChange.value("datetime"), "yyyy-MM-dd hh:mm:ss");
+    QDateTime changeDatetime
+        = QDateTime::fromString(databaseChange.value("datetime"), "yyyy-MM-dd hh:mm:ss");
     QString changeUserName = databaseChange.value("username");
 
     //
@@ -1036,11 +1233,10 @@ void ApplicationManager::aboutUpdateLastChangeInfo()
     //
     // Индицируем последнее изменение
     //
-    QString lastChange =
-        QString("%1: %2 %3")
-        .arg(tr("Modified"))
-        .arg(changeDatetime.toLocalTime().toString("dd.MM.yyyy hh:mm:ss"))
-        .arg(changeUserName);
+    QString lastChange = QString("%1: %2 %3")
+                             .arg(tr("Modified"))
+                             .arg(changeDatetime.toLocalTime().toString("dd.MM.yyyy hh:mm:ss"))
+                             .arg(changeUserName);
     m_tabs->setIndicatorFooterText(lastChange);
 }
 
@@ -1052,176 +1248,208 @@ void ApplicationManager::aboutSyncClosedWithError(int _errorCode, const QString&
     bool disableSyncForCurrentProject = false;
     bool isCriticalError = true;
     switch (_errorCode) {
+    //
+    // Нет связи с интернетом
+    //
+    case Sync::NetworkError: {
         //
-        // Нет связи с интернетом
+        // Если ошибка пришла от окна акторизации или смены пароля, покажем её в нём
         //
-        case Sync::NetworkError: {
-            //
-            // Если ошибка пришла от окна акторизации или смены пароля, покажем её в нём
-            //
-            if (m_startUpManager->isOnLoginDialog()) {
-                m_startUpManager->retryLastAction(_error);
-            }
-            //
-            // А если ошибка пришла в момент работы с облаком, то покажем её в индикаторе
-            //
-            else {
-                title = tr("Network error");
-                error += "\n\n";
-                error += tr("Project didn't synchronized.");
-
-                //
-                // Нет интернета в момент автологина. Текст о соединении
-                //
-                m_startUpManager->setProgressLoginLabel(false);
-            }
-            break;
+        if (m_menuManager->isOnLoginDialog()) {
+            m_menuManager->retryLastAction(_error);
         }
+        //
+        // А если ошибка пришла в момент работы с облаком, то покажем её в индикаторе
+        //
+        else {
+            title = tr("Network error");
+            error += "\n\n";
+            error += tr("Project didn't synchronized.");
 
+            //
+            // Нет интернета в момент автологина. Текст о соединении
+            //
+            m_menuManager->setProgressLoginLabel(false);
+        }
+        break;
+    }
+
+    //
+    // Проблемы с вводом логина и пароля
+    //
+    case Sync::IncorrectLoginError:
+    case Sync::IncorrectPasswordError: {
         //
-        // Проблемы с вводом логина и пароля
+        // Если пользователь не был авторизован, то прокинем
+        // сообщение об ошибке в диалог авторизации
         //
-        case Sync::IncorrectLoginError:
-        case Sync::IncorrectPasswordError: {
+        if (!m_synchronizationManager->isLogged()) {
             error = tr("Incorrect username or password.");
-            m_startUpManager->setProgressLoginLabel(false);
-            m_startUpManager->retryLogin(error);
-            break;
+            m_menuManager->setProgressLoginLabel(false);
+            m_menuManager->retryLogin(error);
         }
+        //
+        // В противном случае, разавторизуем и покажем окно авторизации
+        // с сообщением о том, что пароль изменился
+        //
+        else {
+            const QString email = m_menuManager->userEmail();
+            m_synchronizationManager->logout();
+            error = tr("Saved password is incorrect. Looks like you changed the password. Please, "
+                       "enter the new password.");
+            m_menuManager->showLoginDialog(email, error);
+        }
+        break;
+    }
 
-        //
-        // Закончилась подписка
-        //
-        case Sync::SubscriptionEndedError: {
-            title = tr("Subscription ended");
-            error = tr("Buyed subscription period is finished.\n\n"
-                       "Project didn't synchronized.");
-            disableSyncForCurrentProject = true;
-            break;
-        }
+    //
+    // Закончилась подписка
+    //
+    case Sync::SubscriptionEndedError: {
+        title = tr("Subscription ended");
+        error = tr("Buyed subscription period is finished.\n\n"
+                   "Project didn't synchronized.");
+        disableSyncForCurrentProject = true;
+        break;
+    }
 
-        //
-        // Не задан ключ сессии
-        // NOTE: Такая проблема может возникать при проблемах с провайдером,
-        //		 когда данные портятся на каком-либо из узлов связи
-        //
-        case Sync::NoSessionKeyError: {
-            title = tr("Network Error");
-            error = tr("Can't correct load all data from service. "
-                       "Please check your internet connection quality and refresh synchronization.\n\n"
-                       "Project didn't synchronized.");
-            break;
-        }
+    //
+    // Не задан ключ сессии
+    // NOTE: Такая проблема может возникать при проблемах с провайдером,
+    //		 когда данные портятся на каком-либо из узлов связи
+    //
+    case Sync::NoSessionKeyError: {
+        title = tr("Network Error");
+        error = tr("Can't load all data from service correctly. "
+                   "Please check your internet connection and refresh synchronization.\n\n"
+                   "Project didn't synchronized.");
+        break;
+    }
 
+    //
+    // Сессия закрыта
+    //
+    case Sync::SessionClosedError: {
         //
-        // Сессия закрыта
+        // Переходим в автономный режим с возможностью переавторизации
         //
-        case Sync::SessionClosedError: {
-            //
-            // Переходим в автономный режим с возможностью переавторизации
-            //
-            title = tr("Session closed");
-            error = tr("New session for you account started at other device.\n\n"
-                       "Project didn't synchronized.");
-            reactivateIcon = QIcon(":/Graphics/Icons/Editing/refresh.png");
-            break;
-        }
+        title = tr("Session closed");
+        error = tr("The new session for your account started in another copy of the application on "
+                   "the current device.\n\n"
+                   "Project didn't synchronized.");
+        reactivateIcon = QIcon(":/Graphics/Iconset/refresh.svg");
+        break;
+    }
 
-        //
-        // Пользователь пытается открыть доступ к проекту самому себе
-        //
-        case Sync::DisallowToShareSelf: {
-            title = tr("Share error");
-            error = tr("You can't share project with yourself.");
-            isCriticalError = false;
-            break;
-        }
+    //
+    // Пользователь пытается открыть доступ к проекту самому себе
+    //
+    case Sync::DisallowToShareSelf: {
+        title = tr("Share error");
+        error = tr("You can't share project with yourself.");
+        isCriticalError = false;
+        break;
+    }
 
-        //
-        // Проект недоступен
-        //
-        case Sync::ProjectUnavailableError: {
-            title = tr("Project not available");
-            error = tr("Current project is not available for syncronization now, because project's owner subscription is ended.\n\n"
-                       "Project didn't synchronized.");
-            disableSyncForCurrentProject = true;
-            break;
-        }
+    //
+    // Проект недоступен
+    //
+    case Sync::ProjectUnavailableError: {
+        title = tr("Project not available");
+        error = tr("Current project is not available for syncronization now, because project's "
+                   "owner subscription is ended.\n\n"
+                   "Project didn't synchronized.");
+        disableSyncForCurrentProject = true;
+        break;
+    }
 
-        //
-        // Доступ к проекту закрыт
-        //
-        case Sync::AccessToProjectClosed: {
-            title = tr("Project not available");
-            error = tr("Current project is not available for syncronization now, because project's owner closed access to project for you.\n\n"
-                       "Project didn't synchronized.");
-            disableSyncForCurrentProject = true;
-            break;
-        }
+    //
+    // Доступ к проекту закрыт
+    //
+    case Sync::AccessToProjectClosed: {
+        title = tr("Project not available");
+        error = tr("Current project is not available for syncronization now, because project's "
+                   "owner closed access to project for you.\n\n"
+                   "Project didn't synchronized.");
+        disableSyncForCurrentProject = true;
+        break;
+    }
 
-        //
-        // Закончилось доступное меcто в облаке
-        //
-        case Sync::StorageSizeFinished: {
-            title = tr("Sync not available");
-            error = tr("You have exhausted all available for the use of space on a server.\n\n"
-                       "Project didn't synchronized.");
-            disableSyncForCurrentProject = true;
-            break;
-        }
+    //
+    // Закончилось доступное меcто в облаке
+    //
+    case Sync::StorageSizeFinished: {
+        title = tr("Sync not available");
+        error = tr("You have exhausted all available for the use of space on a server.\n\n"
+                   "Project didn't synchronized.");
+        disableSyncForCurrentProject = true;
+        break;
+    }
 
-        //
-        // Такой email уже зарегистрирован
-        //
-        case Sync::EmailAlreadyRegisteredError: {
-            error = tr("Email already exist");
-            m_startUpManager->retrySignUp(error);
-            break;
-        }
+    //
+    // Используется устаревшая версия программы
+    //
+    case Sync::AppVersionOutdated: {
+        title = tr("Project sync not available");
+        error = tr("You have outdated version of the application. Please install latest app "
+                   "version for restoring access to the project.\n\n"
+                   "Project didn't synchronized.");
+        disableSyncForCurrentProject = true;
+        break;
+    }
 
-        //
-        // Слишком слабый пароль
-        //
-        case Sync::WeakPasswordError: {
-            error = tr("Password too weak");
-            m_startUpManager->showPasswordError(error);
-            break;
-        }
+    //
+    // Такой email уже зарегистрирован
+    //
+    case Sync::EmailAlreadyRegisteredError: {
+        error = tr("Email already exist");
+        m_menuManager->retrySignUp(error);
+        break;
+    }
 
-        //
-        // Старый пароль некорректен
-        //
-        case Sync::IncorrectOldPasswordError: {
-            error = tr("Invalid old password");
-            m_startUpManager->showPasswordError(error);
-            break;
-        }
+    //
+    // Слишком слабый пароль
+    //
+    case Sync::WeakPasswordError: {
+        error = tr("Password too weak");
+        m_menuManager->showPasswordError(error);
+        break;
+    }
 
-        //
-        // Неверный код валидации
-        //
-        case Sync::IncorrectValidationCodeError: {
-            error = tr("Wrong validation code");
-            m_startUpManager->retryVerify(error);
-            break;
-        }
+    //
+    // Старый пароль некорректен
+    //
+    case Sync::IncorrectOldPasswordError: {
+        error = tr("Invalid old password");
+        m_menuManager->showPasswordError(error);
+        break;
+    }
 
-        //
-        // Неверный email для восстановления пароля
-        //
-        case Sync::EmailNotRegisteredError: {
-            error = tr("Wrong email");
-            m_startUpManager->retryLogin(error);
-            break;
-        }
+    //
+    // Неверный код валидации
+    //
+    case Sync::IncorrectValidationCodeError: {
+        error = tr("Wrong validation code");
+        m_menuManager->retryVerify(error);
+        break;
+    }
 
-        //
-        // Остальное
-        //
-        default: {
-            title = tr("Unknown Error");
-            break;
-        }
+    //
+    // Неверный email для восстановления пароля
+    //
+    case Sync::EmailNotRegisteredError: {
+        error = tr("Wrong email");
+        m_menuManager->retryLogin(error);
+        break;
+    }
+
+    //
+    // Остальное
+    //
+    default: {
+        title = tr("Unknown Error");
+        break;
+    }
     }
 
     //
@@ -1234,8 +1462,8 @@ void ApplicationManager::aboutSyncClosedWithError(int _errorCode, const QString&
         // Если пропал интернет, то значок сам покажется при необходимости
         //
         if (m_synchronizationManager->isInternetConnectionActive()
-                && m_synchronizationManager->isLogged()) {
-            m_tabs->addIndicator(QIcon(":/Graphics/Icons/Indicator/unsynced.png"));
+            && m_synchronizationManager->isLogged()) {
+            m_tabs->addIndicator(QIcon(":/Graphics/Iconset/Indicator/unsynced.png"));
             m_tabs->setIndicatorTitle(title);
             m_tabs->setIndicatorText(error);
             m_tabs->setIndicatorActionIcon(reactivateIcon);
@@ -1259,18 +1487,24 @@ void ApplicationManager::aboutSyncClosedWithError(int _errorCode, const QString&
 
 void ApplicationManager::aboutImport()
 {
-    m_importManager->importScenario(m_scenarioManager->scenario(), m_scenarioManager->cursorPosition());
+    m_state = ApplicationState::Importing;
+    m_importManager->importScenario(m_scenarioManager->scenario(),
+                                    m_scenarioManager->cursorPosition());
     m_researchManager->loadScenarioData();
+
+    m_state = ApplicationState::Working;
 }
 
 void ApplicationManager::aboutExport()
 {
-    m_exportManager->exportScenario(m_scenarioManager->scenario(), m_researchManager->scenarioData());
+    m_exportManager->exportScenario(m_scenarioManager->scenario(),
+                                    m_researchManager->scenarioData());
 }
 
-void ApplicationManager::aboutPrintPreview()
+void ApplicationManager::printPreviewScript()
 {
-    m_exportManager->printPreviewScenario(m_scenarioManager->scenario(), m_researchManager->scenarioData());
+    m_exportManager->printPreview(m_scenarioManager->scenario(), m_researchManager->scenarioData(),
+                                  ManagementLayer::ExportType::Script);
 }
 
 void ApplicationManager::aboutExit()
@@ -1283,7 +1517,8 @@ void ApplicationManager::aboutExit()
         // Выводим информацию для пользователя, о закрытии программы
         //
         QLightBoxProgress progress(m_view);
-        progress.showProgress(tr("Exit from Application"), tr("Closing Databse Connections and Remove Temporatry Files."));
+        progress.showProgress(tr("Exit from Application"),
+                              tr("Closing Database Connections and remove temporary files."));
 
         //
         // Закроем текущий проект
@@ -1312,7 +1547,7 @@ void ApplicationManager::aboutApplicationSettingsUpdated()
 void ApplicationManager::aboutProjectChanged()
 {
     if (isProjectLoaded()) {
-        ::updateWindowModified(m_view, true);
+        updateWindowModified(m_view, true);
         m_statisticsManager->scenarioTextChanged();
     }
 }
@@ -1321,11 +1556,10 @@ void ApplicationManager::aboutShowFullscreen()
 {
     const char* IS_MAXIMIZED_PROPERTY = "isMaximized";
 
-    const bool useZenMode =
-            DataStorageLayer::StorageFacade::settingsStorage()->value(
-                "scenario-editor/hide-panels-in-fullscreen",
-                DataStorageLayer::SettingsStorage::ApplicationSettings)
-            .toInt();
+    const bool useZenMode = DataStorageLayer::StorageFacade::settingsStorage()
+                                ->value("scenario-editor/hide-panels-in-fullscreen",
+                                        DataStorageLayer::SettingsStorage::ApplicationSettings)
+                                .toInt();
 
     if (m_view->isFullScreen()) {
         //
@@ -1347,7 +1581,8 @@ void ApplicationManager::aboutShowFullscreen()
         //
         // Сохраним состояние окна перед переходом в полноэкранный режим
         //
-        m_view->setProperty(IS_MAXIMIZED_PROPERTY, m_view->windowState().testFlag(Qt::WindowMaximized));
+        m_view->setProperty(IS_MAXIMIZED_PROPERTY,
+                            m_view->windowState().testFlag(Qt::WindowMaximized));
 
         //
         // Переходим в полноэкранный режим
@@ -1482,16 +1717,30 @@ void ApplicationManager::currentTabIndexChanged()
             // Функция для определения виджета для отображения по индексу вкладки
             //
 
-            auto widgetForTab =
-                [=] (int _index) {
+            auto widgetForTab = [=](int _index) {
                 QWidget* result = 0;
                 switch (_index) {
-                    case STARTUP_TAB_INDEX: result = m_startUpManager->view(); break;
-                    case RESEARCH_TAB_INDEX: result = m_researchManager->view(); break;
-                    case SCENARIO_CARDS_TAB_INDEX: result = m_scenarioManager->cardsView(); break;
-                    case SCENARIO_TAB_INDEX: result = m_scenarioManager->view(); break;
-                    case STATISTICS_TAB_INDEX: result = m_statisticsManager->view(); break;
-                    case SETTINGS_TAB_INDEX: result = m_settingsManager->view(); break;
+                case STARTUP_TAB_INDEX:
+                    result = m_startUpManager->view();
+                    break;
+                case RESEARCH_TAB_INDEX:
+                    result = m_researchManager->view();
+                    break;
+                case SCENARIO_CARDS_TAB_INDEX:
+                    result = m_scenarioManager->cardsView();
+                    break;
+                case SCENARIO_TAB_INDEX:
+                    result = m_scenarioManager->view();
+                    break;
+                case STATISTICS_TAB_INDEX:
+                    result = m_statisticsManager->view();
+                    break;
+                case TOOLS_TAB_INDEX:
+                    result = m_toolsManager->view();
+                    break;
+                case SETTINGS_TAB_INDEX:
+                    result = m_settingsManager->view();
+                    break;
                 }
                 return result;
             };
@@ -1507,15 +1756,15 @@ void ApplicationManager::currentTabIndexChanged()
 #ifdef Q_OS_MAC
                 m_editMenu->clear();
                 switch (m_tabs->currentTab()) {
-                    case SCENARIO_TAB_INDEX: {
-                        m_scenarioManager->buildScriptEditMenu(m_editMenu);
-                        break;
-                    }
+                case SCENARIO_TAB_INDEX: {
+                    m_scenarioManager->buildScriptEditMenu(m_editMenu);
+                    break;
+                }
 
-                    default: {
-                        m_startUpManager->buildEditMenu(m_editMenu);
-                        break;
-                    }
+                default: {
+                    m_startUpManager->buildEditMenu(m_editMenu);
+                    break;
+                }
                 }
 #endif
             }
@@ -1533,49 +1782,53 @@ void ApplicationManager::currentTabIndexChanged()
 
 bool ApplicationManager::saveIfNeeded()
 {
-    bool success = true;
+    if (!m_view->isWindowModified()) {
+        return true;
+    }
 
     //
     // Если какие-то данные изменены
     //
-    if (m_view->isWindowModified()) {
-        int questionResult = QDialogButtonBox::Cancel;
 
-        //
-        // ... если работаем с проектом из облака, сохраняем без вопросов
-        //
-        if (m_projectsManager->currentProject().isRemote()) {
-            questionResult = QDialogButtonBox::Yes;
-        }
-        //
-        // ... для локальных проектов спрашиваем пользователя, хочет ли он сохранить изменения
-        //
-        else {
-            questionResult =
-                    QLightBoxMessage::question(m_view, tr("Save project changes?"),
-                        tr("Project was modified. Save changes?"),
-                        QDialogButtonBox::Cancel | QDialogButtonBox::Yes | QDialogButtonBox::No);
-        }
+    bool success = true;
 
-        if (questionResult != QDialogButtonBox::Cancel) {
-            //
-            // ... и сохраняем, если хочет
-            //
-            if (questionResult == QDialogButtonBox::Yes) {
-                aboutSave();
-            } else {
-                ::updateWindowModified(m_view, false);
-            }
+    int questionResult = QDialogButtonBox::Cancel;
+
+    //
+    // ... если работаем с проектом из облака, сохраняем без вопросов
+    //
+    if (m_projectsManager->currentProject().isRemote()) {
+        questionResult = QDialogButtonBox::Yes;
+    }
+    //
+    // ... для локальных проектов спрашиваем пользователя, хочет ли он сохранить изменения
+    //
+    else {
+        questionResult = QLightBoxMessage::question(
+            m_view, tr("Save project changes?"), tr("Project was modified. Save changes?"),
+            QDialogButtonBox::Cancel | QDialogButtonBox::Yes | QDialogButtonBox::No);
+    }
+
+    if (questionResult != QDialogButtonBox::Cancel) {
+        //
+        // ... и сохраняем, если хочет
+        //
+        if (questionResult == QDialogButtonBox::Yes) {
+            aboutSave();
         } else {
-            success = false;
+            updateWindowModified(m_view, false);
         }
+    } else {
+        success = false;
     }
 
     return success;
 }
 
-void ApplicationManager::goToEditCurrentProject()
+void ApplicationManager::goToEditCurrentProject(const QString& _importFilePath)
 {
+    m_state = ApplicationState::ProjectLoading;
+
     //
     // Покажем уведомление пользователю
     //
@@ -1591,19 +1844,39 @@ void ApplicationManager::goToEditCurrentProject()
     // Активируем вкладки
     //
     ::enableActionsOnProjectOpen();
+    m_menuManager->enableProjectActions();
 
     //
     // Настроим режим работы со сценарием
     //
     const bool isCommentOnly = ProjectsManager::currentProject().isCommentOnly();
-    m_menu->menu()->actions()[IMPORT_MENU_INDEX]->setEnabled(!isCommentOnly);
+    m_menuManager->setMenuItemEnabled(kStartNewVersionMenuIndex, !isCommentOnly);
+    m_menuManager->setMenuItemEnabled(kImportMenuIndex, !isCommentOnly);
+    m_menuManager->setMenuItemEnabled(kExportMenuIndex, !isCommentOnly);
     m_researchManager->setCommentOnly(isCommentOnly);
     m_scenarioManager->setCommentOnly(isCommentOnly);
+
+    //
+    // Если открываемый файл доступен только для чтения, то блокируем изменения, но оставляем
+    // возможность экспорта
+    //
+    if (!ProjectsManager::currentProject().isWritable()) {
+        m_menuManager->setMenuItemEnabled(kStartNewVersionMenuIndex, false);
+        m_menuManager->setMenuItemEnabled(kImportMenuIndex, false);
+        m_researchManager->setCommentOnly(true);
+        m_scenarioManager->setCommentOnly(true);
+    }
 
     //
     // Настроим индикатор
     //
     if (m_projectsManager->currentProject().isRemote()) {
+        //
+        // Сбросим состояние возможности синхронизации проекта,
+        // т.к. она могла измениться, например была продлена подписка
+        //
+        m_projectsManager->setCurrentProjectSyncAvailable(SYNC_AVAILABLE);
+
         setSyncIndicator();
         m_synchronizationManager->prepareToFullSynchronization();
     }
@@ -1640,11 +1913,12 @@ void ApplicationManager::goToEditCurrentProject()
     m_statisticsManager->loadCurrentProject();
 
     //
-    // После того, как все данные загружены и синхронизированы, сохраняем проект
+    // Затем импортируем данные из указанного файла, если необходимо
     //
-    if (m_projectsManager->currentProject().isRemote()) {
-        m_view->setWindowModified(true);
-        aboutSave();
+    if (!_importFilePath.isEmpty()) {
+        progress.setProgressText(tr("Import"), tr("Please wait. Import can take few minutes."));
+        m_importManager->importScenario(m_scenarioManager->scenario(), _importFilePath);
+        m_researchManager->loadScenarioData();
     }
 
     //
@@ -1659,12 +1933,21 @@ void ApplicationManager::goToEditCurrentProject()
     m_researchManager->loadCurrentProjectSettings(ProjectsManager::currentProject().path());
     m_scenarioManager->loadCurrentProjectSettings(ProjectsManager::currentProject().path());
     m_exportManager->loadCurrentProjectSettings(ProjectsManager::currentProject().path());
+    m_toolsManager->loadCurrentProjectSettings();
     loadCurrentProjectSettings(ProjectsManager::currentProject().path());
 
     //
     // Обновим название текущего проекта, т.к. данные о проекте теперь загружены
     //
     updateWindowTitle();
+
+    //
+    // Установим параметры между менеджерами
+    //
+    m_scenarioManager->setScriptHeader(m_researchManager->scriptHeader());
+    m_scenarioManager->setScriptFooter(m_researchManager->scriptFooter());
+    m_scenarioManager->setSceneNumbersPrefix(m_researchManager->sceneNumbersPrefix());
+    m_scenarioManager->setSceneStartNumber(m_researchManager->sceneStartNumber());
 
     //
     // Обновим информацию о последнем изменении
@@ -1677,11 +1960,26 @@ void ApplicationManager::goToEditCurrentProject()
     QApplication::sendPostedEvents();
     QApplication::processEvents();
     progress.finish();
+
+    m_state = ApplicationState::Working;
+
+    //
+    // После того, как все данные загружены и синхронизированы, сохраняем проект
+    //
+    if (m_projectsManager->currentProject().isRemote()) {
+        updateWindowModified(m_view, true);
+        aboutSave();
+    }
 }
 
 void ApplicationManager::closeCurrentProject()
 {
     if (isProjectLoaded()) {
+        //
+        // Ожидаем завершения работы менеджера синхронизации
+        //
+        m_synchronizationManager->wait();
+
         //
         // Сохраним настройки закрываемого проекта
         //
@@ -1697,14 +1995,10 @@ void ApplicationManager::closeCurrentProject()
         m_scenarioManager->closeCurrentProject();
 
         //
-        // Очистим все загруженные на текущий момент данные
+        // Удалим всю информацию о курсорах соавтора
         //
-        DataStorageLayer::StorageFacade::clearStorages();
-
-        //
-        // Если использовалась база данных, то удалим старое соединение
-        //
-        DatabaseLayer::Database::closeCurrentFile();
+        m_tabs->clearIndicatorMenu();
+        m_scenarioManager->clearAdditionalCursors();
 
         //
         // Информируем управляющего проектами, что текущий проект закрыт
@@ -1715,12 +2009,32 @@ void ApplicationManager::closeCurrentProject()
         // Отключим некоторые действия, которые не могут быть выполнены до момента загрузки проекта
         //
         ::disableActionsOnStart();
+        m_menuManager->disableProjectActions();
 
         //
         // Перейти на стартовую вкладку
         //
-        m_tabs->setCurrentTab(0);
+        m_tabs->setCurrentTab(STARTUP_TAB_INDEX);
+        m_tabsSecondary->setCurrentTab(SETTINGS_TAB_INDEX);
     }
+
+    //
+    // Очистим все загруженные на текущий момент данные
+    //
+    DataStorageLayer::StorageFacade::clearStorages();
+
+    //
+    // Если использовалась база данных, то удалим старое соединение
+    //
+    DatabaseLayer::Database::closeCurrentFile();
+
+    updateWindowModified(m_view, false);
+    updateWindowTitle();
+
+    //
+    // Перезапускаем работу менеджера синхронизации после ожидания и остановки
+    //
+    m_synchronizationManager->restart();
 }
 
 bool ApplicationManager::isProjectLoaded() const
@@ -1739,9 +2053,9 @@ void ApplicationManager::initView()
     // Настроим меню
     //
     m_menu->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
-//    m_menu->setIcons(QIcon(":/Graphics/Icons/Mobile/menu.png"));
+    m_menu->setIcons(QIcon(":/Graphics/Iconset/menu.svg"));
     m_menu->setText(tr("Menu"));
-    m_menu->setMenu(createMenu());
+    m_menuManager->setMenu(createMenu());
     m_menuSecondary->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
 
 #ifdef Q_OS_MAC
@@ -1754,7 +2068,7 @@ void ApplicationManager::initView()
         QString appPath = QApplication::applicationFilePath();
         appPath = appPath.split(".app").first();
         appPath += ".app";
-        QProcess::startDetached("open", {"-na", appPath});
+        QProcess::startDetached("open", { "-na", appPath });
     });
     menu->setAsDockMenu();
 #endif
@@ -1764,22 +2078,33 @@ void ApplicationManager::initView()
     //
     // ... основную
     //
-    m_tabs->addTab(tr("Start"), QIcon(":/Graphics/Icons/start.png"));
-    g_disableOnStartActions << m_tabs->addTab(tr("Research"), QIcon(":/Graphics/Icons/research.png"));
-    g_disableOnStartActions << m_tabs->addTab(tr("Cards"), QIcon(":/Graphics/Icons/cards.png"));
-    g_disableOnStartActions << m_tabs->addTab(tr("Scenario"), QIcon(":/Graphics/Icons/script.png"));
-    g_disableOnStartActions << m_tabs->addTab(tr("Statistics"), QIcon(":/Graphics/Icons/statistics.png"));
-    m_tabs->addTab(tr("Settings"), QIcon(":/Graphics/Icons/settings.png"));
+    m_tabs->addTab(tr("Start"), QIcon(":/Graphics/Iconset/apps.svg"));
+    g_disableOnStartActions << m_tabs->addTab(tr("Research"),
+                                              QIcon(":/Graphics/Iconset/sitemap.svg"));
+    g_disableOnStartActions << m_tabs->addTab(
+        tr("Cards"), QIcon(":/Graphics/Iconset/arrange-bring-to-front.svg"));
+    g_disableOnStartActions << m_tabs->addTab(tr("Scenario"),
+                                              QIcon(":/Graphics/Iconset/file-document-box.svg"));
+    g_disableOnStartActions << m_tabs->addTab(tr("Statistics"),
+                                              QIcon(":/Graphics/Iconset/chart-areaspline.svg"));
+    g_disableOnStartActions << m_tabs->addTab(tr("Tools"), QIcon(":/Graphics/Iconset/wrench.svg"));
+    m_tabs->addTab(tr("Settings"), QIcon(":/Graphics/Iconset/settings.svg"));
     //
     // ... вспомогательную
     //
     m_tabsSecondary->setCompactMode(true);
-    m_tabsSecondary->addTab(tr("Start"), QIcon(":/Graphics/Icons/start.png"));
-    g_disableOnStartActions << m_tabsSecondary->addTab(tr("Research"), QIcon(":/Graphics/Icons/research.png"));
-    g_disableOnStartActions << m_tabsSecondary->addTab(tr("Cards"), QIcon(":/Graphics/Icons/cards.png"));
-    g_disableOnStartActions << m_tabsSecondary->addTab(tr("Scenario"), QIcon(":/Graphics/Icons/script.png"));
-    g_disableOnStartActions << m_tabsSecondary->addTab(tr("Statistics"), QIcon(":/Graphics/Icons/statistics.png"));
-    m_tabsSecondary->addTab(tr("Settings"), QIcon(":/Graphics/Icons/settings.png"));
+    m_tabsSecondary->addTab(tr("Start"), QIcon(":/Graphics/Iconset/apps.svg"));
+    g_disableOnStartActions << m_tabsSecondary->addTab(tr("Research"),
+                                                       QIcon(":/Graphics/Iconset/sitemap.svg"));
+    g_disableOnStartActions << m_tabsSecondary->addTab(
+        tr("Cards"), QIcon(":/Graphics/Iconset/arrange-bring-to-front.svg"));
+    g_disableOnStartActions << m_tabsSecondary->addTab(
+        tr("Scenario"), QIcon(":/Graphics/Iconset/file-document-box.svg"));
+    g_disableOnStartActions << m_tabsSecondary->addTab(
+        tr("Statistics"), QIcon(":/Graphics/Iconset/chart-areaspline.svg"));
+    g_disableOnStartActions << m_tabsSecondary->addTab(tr("Tools"),
+                                                       QIcon(":/Graphics/Iconset/wrench.svg"));
+    m_tabsSecondary->addTab(tr("Settings"), QIcon(":/Graphics/Iconset/settings.svg"));
     m_tabsSecondary->setCurrentTab(SETTINGS_TAB_INDEX);
 
     //
@@ -1791,6 +2116,7 @@ void ApplicationManager::initView()
     m_tabsWidgets->addWidget(m_scenarioManager->cardsView());
     m_tabsWidgets->addWidget(m_scenarioManager->view());
     m_tabsWidgets->addWidget(m_statisticsManager->view());
+    m_tabsWidgets->addWidget(m_toolsManager->view());
     m_tabsWidgetsSecondary->setObjectName("tabsWidgetsSecondary");
     m_tabsWidgetsSecondary->addWidget(m_settingsManager->view());
 
@@ -1834,13 +2160,14 @@ void ApplicationManager::initView()
     // Отключим некоторые действия, которые не могут быть выполнены до момента загрузки проекта
     //
     ::disableActionsOnStart();
+    m_menuManager->disableProjectActions();
 
     //
     // Отключим на маленьких экранах некоторые возможности
     //
     QScreen* screen = QApplication::primaryScreen();
     if (screen->availableSize().width() < 1360) {
-        m_menu->menu()->actions()[TWO_PANEL_MODE_MENU_INDEX]->setEnabled(false);
+        m_menuManager->setMenuItemEnabled(kTwoPanelModeMenuIndex, false);
         m_settingsManager->disableTwoPanelsMode();
         if (screen->availableSize().width() < 1024) {
             m_settingsManager->disableCompactMode();
@@ -1859,44 +2186,46 @@ QMenu* ApplicationManager::createMenu()
     m_editMenu = m_menuBar->addMenu(tr("Edit"));
     m_startUpManager->buildEditMenu(m_editMenu);
 #else
-    QMenu* menu = new QMenu(m_menu);
+    QMenu* menu = new QMenu(m_view);
 #endif
     QAction* createNewProject = menu->addAction(tr("New"));
     QAction* openProject = menu->addAction(tr("Open"));
     QAction* saveProject = menu->addAction(tr("Save"));
     saveProject->setShortcut(QKeySequence::Save);
-    QAction* saveProjectAs = menu->addAction(tr("Save As..."));
-    g_disableOnStartActions << saveProject;
-    g_disableOnStartActions << saveProjectAs;
+    m_view->addAction(saveProject);
+    QAction* saveProjectAs = menu->addAction(tr("Save as..."));
 
     menu->addSeparator();
+    // ... начать новую версию
+    QAction* newVersion = menu->addAction(tr("New script version..."));
     // ... импорт
-    QAction* import = menu->addAction(tr("Import..."));
-    g_disableOnStartActions << import;
+    QAction* importTo = menu->addAction(tr("Import..."));
     // ... экспорт
     QAction* exportTo = menu->addAction(tr("Export to..."));
-    g_disableOnStartActions << exportTo;
     // ... предварительный просмотр
-    QAction* printPreview = menu->addAction(tr("Print Preview"));
+    QAction* printPreview = menu->addAction(tr("Print preview script"));
     printPreview->setShortcut(QKeySequence(Qt::Key_F12));
-    g_disableOnStartActions << printPreview;
+    m_view->addAction(printPreview);
 
     menu->addSeparator();
-    QAction* twoPanelMode = menu->addAction(tr("Two Panel Mode"));
+    QAction* twoPanelMode = menu->addAction(tr("Two panel mode"));
     twoPanelMode->setCheckable(true);
     twoPanelMode->setShortcut(QKeySequence(Qt::Key_F2));
+    m_view->addAction(twoPanelMode);
 
     //
     // Настроим соединения
     //
-    connect(createNewProject, SIGNAL(triggered()), this, SLOT(aboutCreateNew()));
-    connect(openProject, SIGNAL(triggered()), this, SLOT(aboutLoad()));
-    connect(saveProject, SIGNAL(triggered()), this, SLOT(aboutSave()));
-    connect(saveProjectAs, SIGNAL(triggered()), this, SLOT(aboutSaveAs()));
-    connect(import, SIGNAL(triggered()), this, SLOT(aboutImport()));
-    connect(exportTo, SIGNAL(triggered()), this, SLOT(aboutExport()));
-    connect(printPreview, SIGNAL(triggered()), this, SLOT(aboutPrintPreview()));
-    connect(twoPanelMode, &QAction::triggered, m_settingsManager, &SettingsManager::setUseTwoPanelMode);
+    connect(createNewProject, &QAction::triggered, this, &ApplicationManager::aboutCreateNew);
+    connect(openProject, &QAction::triggered, this, [this] { aboutLoad(); });
+    connect(saveProject, &QAction::triggered, this, &ApplicationManager::aboutSave);
+    connect(newVersion, &QAction::triggered, this, &ApplicationManager::aboutStartNewVersion);
+    connect(saveProjectAs, &QAction::triggered, this, &ApplicationManager::aboutSaveAs);
+    connect(importTo, &QAction::triggered, this, &ApplicationManager::aboutImport);
+    connect(exportTo, &QAction::triggered, this, &ApplicationManager::aboutExport);
+    connect(printPreview, &QAction::triggered, this, &ApplicationManager::printPreviewScript);
+    connect(twoPanelMode, &QAction::triggered, m_settingsManager,
+            &SettingsManager::setUseTwoPanelMode);
 
 #ifdef Q_OS_MAC
     //
@@ -1913,9 +2242,11 @@ void ApplicationManager::initConnections()
 {
     connect(m_view, SIGNAL(wantToClose()), this, SLOT(aboutExit()));
 
-    connect(m_menu, SIGNAL(clicked()), m_menu, SLOT(showMenu()));
+    connect(m_menu, &FlatButton::clicked, m_menuManager, &MenuManager::showMenu);
+
     connect(m_tabs, &SideTabBar::currentChanged, this, &ApplicationManager::currentTabIndexChanged);
-    connect(m_tabsSecondary, &SideTabBar::currentChanged, this, &ApplicationManager::currentTabIndexChanged);
+    connect(m_tabsSecondary, &SideTabBar::currentChanged, this,
+            &ApplicationManager::currentTabIndexChanged);
     //
     // Переавторизуемся
     //
@@ -1923,98 +2254,183 @@ void ApplicationManager::initConnections()
         m_synchronizationManager->restartSession();
         setSyncIndicator();
     });
-    connect(m_tabs, &SideTabBar::indicatorMenuClicked, m_scenarioManager, &ScenarioManager::scrollToAdditionalCursor);
+    connect(m_tabs, &SideTabBar::indicatorMenuClicked, m_scenarioManager,
+            &ScenarioManager::scrollToAdditionalCursor);
 
-    connect(m_projectsManager, &ProjectsManager::recentProjectsUpdated, this, &ApplicationManager::updateRecentProjectsList);
-    connect(m_projectsManager, &ProjectsManager::remoteProjectsUpdated, this, &ApplicationManager::updateRemoteProjectsList);
-    connect(m_projectsManager, &ProjectsManager::recentProjectNameChanged, m_startUpManager, &StartUpManager::setRecentProjectName);
-    connect(m_projectsManager, &ProjectsManager::remoteProjectNameChanged, m_startUpManager, &StartUpManager::setRemoteProjectName);
+    connect(m_projectsManager, &ProjectsManager::recentProjectsUpdated, this,
+            &ApplicationManager::updateRecentProjectsList);
+    connect(m_projectsManager, &ProjectsManager::remoteProjectsUpdated, this,
+            &ApplicationManager::updateRemoteProjectsList);
+    connect(m_projectsManager, &ProjectsManager::recentProjectNameChanged, m_startUpManager,
+            &StartUpManager::setRecentProjectName);
+    connect(m_projectsManager, &ProjectsManager::remoteProjectNameChanged, m_startUpManager,
+            &StartUpManager::setRemoteProjectName);
 
-    connect(m_startUpManager, &StartUpManager::loginRequested, m_synchronizationManager, &SynchronizationManager::login);
-    connect(m_startUpManager, &StartUpManager::signUpRequested, m_synchronizationManager, &SynchronizationManager::signUp);
-    connect(m_startUpManager, &StartUpManager::verifyRequested, m_synchronizationManager, &SynchronizationManager::verify);
-    connect(m_startUpManager, &StartUpManager::restoreRequested, m_synchronizationManager, &SynchronizationManager::restorePassword);
-    connect(m_startUpManager, &StartUpManager::logoutRequested, m_synchronizationManager, &SynchronizationManager::logout);
-    connect(m_startUpManager, &StartUpManager::renewSubscriptionRequested, m_synchronizationManager, &SynchronizationManager::renewSubscription);
-    connect(m_startUpManager, &StartUpManager::userNameChangeRequested, m_synchronizationManager, &SynchronizationManager::changeUserName);
-    connect(m_startUpManager, &StartUpManager::getSubscriptionInfoRequested, m_synchronizationManager, &SynchronizationManager::loadSubscriptionInfo);
-    connect(m_startUpManager, &StartUpManager::passwordChangeRequested, m_synchronizationManager, &SynchronizationManager::changePassword);
+    connect(m_menuManager, &MenuManager::loginRequested, m_synchronizationManager,
+            &SynchronizationManager::login);
+    connect(m_menuManager, &MenuManager::signUpRequested, m_synchronizationManager,
+            &SynchronizationManager::signUp);
+    connect(m_menuManager, &MenuManager::verifyRequested, m_synchronizationManager,
+            &SynchronizationManager::verify);
+    connect(m_menuManager, &MenuManager::restoreRequested, m_synchronizationManager,
+            &SynchronizationManager::restorePassword);
+    connect(m_menuManager, &MenuManager::logoutRequested, m_synchronizationManager,
+            &SynchronizationManager::logout);
+    connect(m_menuManager, &MenuManager::renewSubscriptionRequested, m_synchronizationManager,
+            &SynchronizationManager::renewSubscription);
+    connect(m_menuManager, &MenuManager::userNameChangeRequested, m_synchronizationManager,
+            &SynchronizationManager::changeUserName);
+    connect(m_menuManager, &MenuManager::getSubscriptionInfoRequested, m_synchronizationManager,
+            &SynchronizationManager::loadSubscriptionInfo);
+    connect(m_menuManager, &MenuManager::passwordChangeRequested, m_synchronizationManager,
+            &SynchronizationManager::changePassword);
+    connect(m_menuManager, &MenuManager::updateRequested, m_startUpManager,
+            &StartUpManager::showUpdateDialog);
 
-    connect(m_startUpManager, &StartUpManager::createProjectRequested, this, &ApplicationManager::aboutCreateNew);
+    connect(m_startUpManager, &StartUpManager::createProjectRequested, this,
+            &ApplicationManager::aboutCreateNew);
     connect(m_startUpManager, &StartUpManager::openProjectRequested, [=] { aboutLoad(); });
-    connect(m_startUpManager, &StartUpManager::helpRequested, this, &ApplicationManager::aboutShowHelp);
-    connect(m_startUpManager, &StartUpManager::refreshProjectsRequested, m_projectsManager, &ProjectsManager::refreshProjects);
-    connect(m_startUpManager, &StartUpManager::refreshProjectsRequested, m_synchronizationManager, &SynchronizationManager::loadProjects);
-    connect(m_startUpManager, &StartUpManager::openRecentProjectRequested, this, &ApplicationManager::aboutLoadFromRecent);
-    connect(m_startUpManager, &StartUpManager::hideRecentProjectRequested, this, &ApplicationManager::hideLocalProject);
-    connect(m_startUpManager, &StartUpManager::openRemoteProjectRequested, this, &ApplicationManager::aboutLoadFromRemote);
-    connect(m_startUpManager, &StartUpManager::editRemoteProjectRequested, this, &ApplicationManager::editRemoteProjectName);
-    connect(m_startUpManager, &StartUpManager::removeRemoteProjectRequested, this, &ApplicationManager::removeRemoteProject);
-    connect(m_startUpManager, &StartUpManager::shareRemoteProjectRequested, this, &ApplicationManager::shareRemoteProject);
-    connect(m_startUpManager, &StartUpManager::unshareRemoteProjectRequested, this, &ApplicationManager::unshareRemoteProject);
+    connect(m_startUpManager, &StartUpManager::helpRequested, this,
+            &ApplicationManager::aboutShowHelp);
+    connect(m_startUpManager, &StartUpManager::crowdfindingJoinRequested, this,
+            &ApplicationManager::aboutShowCrowdfinding);
+    connect(m_startUpManager, &StartUpManager::refreshProjectsRequested, m_projectsManager,
+            &ProjectsManager::refreshProjects);
+    connect(m_startUpManager, &StartUpManager::refreshProjectsRequested, m_synchronizationManager,
+            &SynchronizationManager::loadProjects);
+    connect(m_startUpManager, &StartUpManager::openRecentProjectRequested, this,
+            &ApplicationManager::aboutLoadFromRecent);
+    connect(m_startUpManager, &StartUpManager::hideRecentProjectRequested, this,
+            &ApplicationManager::hideLocalProject);
+    connect(m_startUpManager, &StartUpManager::moveToCloudRecentProjectRequested, this,
+            &ApplicationManager::moveLocalProjectToCloud);
+    connect(m_startUpManager, &StartUpManager::openRemoteProjectRequested, this,
+            &ApplicationManager::aboutLoadFromRemote);
+    connect(m_startUpManager, &StartUpManager::editRemoteProjectRequested, this,
+            &ApplicationManager::editRemoteProjectName);
+    connect(m_startUpManager, &StartUpManager::removeRemoteProjectRequested, this,
+            &ApplicationManager::removeRemoteProject);
+    connect(m_startUpManager, &StartUpManager::shareRemoteProjectRequested, this,
+            &ApplicationManager::shareRemoteProject);
+    connect(m_startUpManager, &StartUpManager::unshareRemoteProjectRequested, this,
+            &ApplicationManager::unshareRemoteProject);
+    connect(m_startUpManager, &StartUpManager::updatePublished, m_menuManager,
+            &MenuManager::showUpdateButton);
 
-    connect(m_researchManager, &ResearchManager::scenarioNameChanged, this, &ApplicationManager::updateWindowTitle);
-    connect(m_researchManager, &ResearchManager::characterNameChanged, m_scenarioManager, &ScenarioManager::aboutCharacterNameChanged);
-    connect(m_researchManager, &ResearchManager::refreshCharacters, m_scenarioManager, &ScenarioManager::aboutRefreshCharacters);
-    connect(m_researchManager, &ResearchManager::locationNameChanged, m_scenarioManager, &ScenarioManager::aboutLocationNameChanged);
-    connect(m_researchManager, &ResearchManager::refreshLocations, m_scenarioManager, &ScenarioManager::aboutRefreshLocations);
+    connect(m_researchManager, &ResearchManager::scriptNameChanged, this,
+            &ApplicationManager::updateWindowTitle);
+    connect(m_researchManager, &ResearchManager::scriptHeaderChanged, m_scenarioManager,
+            &ScenarioManager::setScriptHeader);
+    connect(m_researchManager, &ResearchManager::scriptFooterChanged, m_scenarioManager,
+            &ScenarioManager::setScriptFooter);
+    connect(m_researchManager, &ResearchManager::sceneNumbersPrefixChanged, m_scenarioManager,
+            &ScenarioManager::setSceneNumbersPrefix);
+    connect(m_researchManager, &ResearchManager::sceneStartNumberChanged, m_scenarioManager,
+            &ScenarioManager::setSceneStartNumber);
+    connect(m_researchManager, &ResearchManager::scenesNumberingLockChanged, m_scenarioManager,
+            &ScenarioManager::setScenesNumberingLock);
+    connect(m_researchManager, &ResearchManager::versionsChanged, this,
+            &ApplicationManager::updateWindowTitle);
+    connect(m_researchManager, &ResearchManager::characterNameChanged, m_scenarioManager,
+            &ScenarioManager::aboutCharacterNameChanged);
+    connect(m_researchManager, &ResearchManager::refreshCharacters, m_scenarioManager,
+            &ScenarioManager::aboutRefreshCharacters);
+    connect(m_researchManager, &ResearchManager::locationNameChanged, m_scenarioManager,
+            &ScenarioManager::aboutLocationNameChanged);
+    connect(m_researchManager, &ResearchManager::refreshLocations, m_scenarioManager,
+            &ScenarioManager::aboutRefreshLocations);
+    connect(m_researchManager, &ResearchManager::addScriptVersionRequested, this,
+            &ApplicationManager::aboutStartNewVersion);
 
-    connect(m_scenarioManager, &ScenarioManager::showFullscreen, this, &ApplicationManager::aboutShowFullscreen);
-    connect(m_scenarioManager, &ScenarioManager::updateScenarioRequest, this, &ApplicationManager::aboutUpdateLastChangeInfo);
-    connect(m_scenarioManager, &ScenarioManager::updateScenarioRequest, m_synchronizationManager, &SynchronizationManager::aboutWorkSyncScenario);
-    connect(m_scenarioManager, &ScenarioManager::updateScenarioRequest, m_synchronizationManager, &SynchronizationManager::aboutWorkSyncData);
-    connect(m_scenarioManager, &ScenarioManager::updateCursorsRequest, m_synchronizationManager, &SynchronizationManager::aboutUpdateCursors);
-    connect(m_scenarioManager, &ScenarioManager::linkActivated, this, &ApplicationManager::aboutInnerLinkActivated);
+    connect(m_scenarioManager, &ScenarioManager::showFullscreen, this,
+            &ApplicationManager::aboutShowFullscreen);
+    connect(m_scenarioManager, &ScenarioManager::updateScenarioRequest, this,
+            &ApplicationManager::aboutUpdateLastChangeInfo);
+    connect(m_scenarioManager, &ScenarioManager::updateScenarioRequest, m_synchronizationManager,
+            &SynchronizationManager::aboutWorkSyncScenario);
+    connect(m_scenarioManager, &ScenarioManager::updateScenarioRequest, m_synchronizationManager,
+            &SynchronizationManager::aboutWorkSyncData);
+    connect(m_scenarioManager, &ScenarioManager::updateCursorsRequest, m_synchronizationManager,
+            &SynchronizationManager::aboutUpdateCursors);
+    connect(m_scenarioManager, &ScenarioManager::linkActivated, this,
+            &ApplicationManager::aboutInnerLinkActivated);
+    connect(m_scenarioManager, &ScenarioManager::scriptFixedScenesChanged, m_researchManager,
+            &ResearchManager::setScenesNumberingFixed);
 
-    connect(m_statisticsManager, SIGNAL(needNewExportedScenario()), this, SLOT(aboutPrepareScenarioForStatistics()));
-    connect(m_statisticsManager, &StatisticsManager::linkActivated, this, &ApplicationManager::aboutInnerLinkActivated);
+    connect(m_statisticsManager, SIGNAL(needNewExportedScenario()), this,
+            SLOT(aboutPrepareScenarioForStatistics()));
+    connect(m_statisticsManager, &StatisticsManager::linkActivated, this,
+            &ApplicationManager::aboutInnerLinkActivated);
 
-    connect(m_settingsManager, &SettingsManager::applicationSettingsUpdated,
-            this, &ApplicationManager::aboutApplicationSettingsUpdated);
-    connect(m_settingsManager, &SettingsManager::researchSettingsUpdated,
-            m_researchManager, &ResearchManager::updateSettings);
-    connect(m_settingsManager, &SettingsManager::scenarioEditSettingsUpdated,
-            m_researchManager, &ResearchManager::updateSettings);
-    connect(m_settingsManager, &SettingsManager::cardsSettingsUpdated,
-            m_scenarioManager, &ScenarioManager::aboutCardsSettingsUpdated);
-    connect(m_settingsManager, SIGNAL(scenarioEditSettingsUpdated()),
-            m_scenarioManager, SLOT(aboutTextEditSettingsUpdated()));
-    connect(m_settingsManager, SIGNAL(navigatorSettingsUpdated()),
-            m_scenarioManager, SLOT(aboutNavigatorSettingsUpdated()));
-    connect(m_settingsManager, SIGNAL(chronometrySettingsUpdated()),
-            m_scenarioManager, SLOT(aboutChronometrySettingsUpdated()));
-    connect(m_settingsManager, SIGNAL(countersSettingsUpdated()),
-            m_scenarioManager, SLOT(aboutCountersSettingsUpdated()));
+    connect(m_settingsManager, &SettingsManager::applicationSettingsUpdated, this,
+            &ApplicationManager::aboutApplicationSettingsUpdated);
+    connect(m_settingsManager, &SettingsManager::researchSettingsUpdated, m_researchManager,
+            &ResearchManager::updateSettings);
+    connect(m_settingsManager, &SettingsManager::scenarioEditSettingsUpdated, m_researchManager,
+            &ResearchManager::updateSettings);
+    connect(m_settingsManager, &SettingsManager::cardsSettingsUpdated, m_scenarioManager,
+            &ScenarioManager::aboutCardsSettingsUpdated);
+    connect(m_settingsManager, &SettingsManager::scenarioEditSettingsUpdated, m_scenarioManager,
+            &ScenarioManager::aboutTextEditSettingsUpdated);
+    connect(m_settingsManager, &SettingsManager::navigatorSettingsUpdated, m_scenarioManager,
+            &ScenarioManager::aboutNavigatorSettingsUpdated);
+    connect(m_settingsManager, &SettingsManager::chronometrySettingsUpdated, m_scenarioManager,
+            &ScenarioManager::aboutChronometrySettingsUpdated);
+    connect(m_settingsManager, &SettingsManager::countersSettingsUpdated, m_scenarioManager,
+            &ScenarioManager::aboutCountersSettingsUpdated);
+    connect(m_settingsManager, &SettingsManager::scenarioEditSettingsUpdated, m_toolsManager,
+            &ToolsManager::reloadTextEditSettings);
+
+    connect(m_toolsManager, &ToolsManager::applyScriptRequested, m_scenarioManager,
+            &ScenarioManager::setScriptXml);
 
     connect(m_researchManager, SIGNAL(researchChanged()), this, SLOT(aboutProjectChanged()));
     connect(m_scenarioManager, SIGNAL(scenarioChanged()), this, SLOT(aboutProjectChanged()));
-    connect(m_exportManager, SIGNAL(scenarioTitleListDataChanged()), this, SLOT(aboutProjectChanged()));
+    connect(m_exportManager, SIGNAL(scenarioTitleListDataChanged()), this,
+            SLOT(aboutProjectChanged()));
 
-    connect(m_synchronizationManager, &SynchronizationManager::syncClosedWithError, this, &ApplicationManager::aboutSyncClosedWithError);
-    connect(m_synchronizationManager, &SynchronizationManager::networkStatusChanged, this, &ApplicationManager::setSyncIndicator);
-    connect(m_synchronizationManager, &SynchronizationManager::logoutFinished, m_tabs, &SideTabBar::removeIndicator);
+    connect(m_synchronizationManager, &SynchronizationManager::syncClosedWithError, this,
+            &ApplicationManager::aboutSyncClosedWithError);
+    connect(m_synchronizationManager, &SynchronizationManager::networkStatusChanged, this,
+            &ApplicationManager::setSyncIndicator);
+    connect(m_synchronizationManager, &SynchronizationManager::logoutFinished, m_tabs,
+            &SideTabBar::removeIndicator);
 
-    connect(m_synchronizationManager, SIGNAL(applyPatchRequested(QString,bool)),
-            m_scenarioManager, SLOT(aboutApplyPatch(QString,bool)));
-    connect(m_synchronizationManager, SIGNAL(applyPatchesRequested(QList<QString>,bool)),
-            m_scenarioManager, SLOT(aboutApplyPatches(QList<QString>,bool)));
-    connect(m_synchronizationManager, SIGNAL(cursorsUpdated(QMap<QString,int>,bool)),
-            m_scenarioManager, SLOT(aboutCursorsUpdated(QMap<QString,int>,bool)));
-    connect(m_synchronizationManager, &SynchronizationManager::cursorsUpdated, [this] (const QMap<QString, int>& _cursors, bool _isDraft) {
-        if (_isDraft == m_scenarioManager->workModeIsDraft()) {
-            m_tabs->setIndicatorMenu(QVector<QString>::fromList(_cursors.keys()));
-        }
-    });
+    connect(m_synchronizationManager, &SynchronizationManager::applyPatchRequested,
+            m_scenarioManager, &ScenarioManager::aboutApplyPatch);
+    connect(m_synchronizationManager, &SynchronizationManager::applyPatchesRequested,
+            m_scenarioManager, &ScenarioManager::aboutApplyPatches);
+    connect(m_synchronizationManager, &SynchronizationManager::cursorsUpdated, m_scenarioManager,
+            &ScenarioManager::aboutCursorsUpdated);
+    connect(m_synchronizationManager, &SynchronizationManager::cursorsUpdated,
+            [this](const QMap<QString, int>& _cursors, bool _isDraft) {
+                if (_isDraft == m_scenarioManager->workModeIsDraft()) {
+                    m_tabs->setIndicatorMenu(_cursors.keys().toVector());
+                }
+            });
 
-    connect(m_synchronizationManager, &SynchronizationManager::loginAccepted, m_startUpManager, &StartUpManager::completeLogin);
-    connect(m_synchronizationManager, &SynchronizationManager::signUpFinished, m_startUpManager, &StartUpManager::userAfterSignUp);
-    connect(m_synchronizationManager, &SynchronizationManager::verified, m_startUpManager, &StartUpManager::userAfterSignUp);
-    connect(m_synchronizationManager, &SynchronizationManager::passwordRestored, m_startUpManager, &StartUpManager::userPassRestored);
-    connect(m_synchronizationManager, &SynchronizationManager::logoutFinished, m_startUpManager, &StartUpManager::completeLogout);
-    connect(m_synchronizationManager, &SynchronizationManager::passwordChanged, m_startUpManager, &StartUpManager::passwordChanged);
-    connect(m_synchronizationManager, &SynchronizationManager::subscriptionInfoLoaded, m_startUpManager, &StartUpManager::setSubscriptionInfo);
-    connect(m_synchronizationManager, &SynchronizationManager::subscriptionInfoLoaded, m_projectsManager, &ProjectsManager::setRemoteProjectsSyncAvailable);
-    connect(m_synchronizationManager, &SynchronizationManager::projectsLoaded, m_projectsManager, &ProjectsManager::setRemoteProjects);
+    connect(m_synchronizationManager, &SynchronizationManager::loginAccepted, m_menuManager,
+            &MenuManager::completeLogin);
+    connect(m_synchronizationManager, &SynchronizationManager::loginAccepted,
+            [this] { m_startUpManager->setRemoteProjectsVisible(true); });
+    connect(m_synchronizationManager, &SynchronizationManager::signUpFinished, m_menuManager,
+            &MenuManager::userAfterSignUp);
+    connect(m_synchronizationManager, &SynchronizationManager::verified, m_menuManager,
+            &MenuManager::userAfterSignUp);
+    connect(m_synchronizationManager, &SynchronizationManager::passwordRestored, m_menuManager,
+            &MenuManager::userPassRestored);
+    connect(m_synchronizationManager, &SynchronizationManager::logoutFinished, m_menuManager,
+            &MenuManager::completeLogout);
+    connect(m_synchronizationManager, &SynchronizationManager::logoutFinished,
+            [this] { m_startUpManager->setRemoteProjectsVisible(false); });
+    connect(m_synchronizationManager, &SynchronizationManager::passwordChanged, m_menuManager,
+            &MenuManager::passwordChanged);
+    connect(m_synchronizationManager, &SynchronizationManager::subscriptionInfoLoaded,
+            m_menuManager, &MenuManager::setSubscriptionInfo);
+    connect(m_synchronizationManager, &SynchronizationManager::subscriptionInfoLoaded,
+            m_projectsManager, &ProjectsManager::setRemoteProjectsSyncAvailable);
+    connect(m_synchronizationManager, &SynchronizationManager::projectsLoaded, m_projectsManager,
+            &ProjectsManager::setRemoteProjects);
 
     //
     // Когда пользователь вышел из своего аккаунта, закрываем текущий проект, если он из облака
@@ -2031,9 +2447,8 @@ void ApplicationManager::initStyleSheet()
     //
     // Загрузим стиль
     //
-    QFile styleSheetFile(
-                QString(":/Interface/UI/style-desktop%2.qss")
-                .arg(QLocale().textDirection() == Qt::RightToLeft ? "-rtl" : ""));
+    QFile styleSheetFile(QString(":/Interface/UI/style-desktop%2.qss")
+                             .arg(QLocale().textDirection() == Qt::RightToLeft ? "-rtl" : ""));
     styleSheetFile.open(QIODevice::ReadOnly);
     QString styleSheet = styleSheetFile.readAll();
     styleSheetFile.close();
@@ -2060,13 +2475,19 @@ void ApplicationManager::initStyleSheet()
 void ApplicationManager::reloadApplicationSettings()
 {
     //
+    // Установить используемый приложением шрифт
+    //
+    QFont font("Roboto Regular");
+    font.setPixelSize(12);
+    QApplication::setFont(font);
+
+    //
     // Внешний вид приложения
     //
-    const bool useDarkTheme =
-            DataStorageLayer::StorageFacade::settingsStorage()->value(
-                "application/use-dark-theme",
-                DataStorageLayer::SettingsStorage::ApplicationSettings)
-            .toInt();
+    const bool useDarkTheme = DataStorageLayer::StorageFacade::settingsStorage()
+                                  ->value("application/use-dark-theme",
+                                          DataStorageLayer::SettingsStorage::ApplicationSettings)
+                                  .toInt();
     m_view->setUseDarkTheme(useDarkTheme);
     {
         //
@@ -2128,15 +2549,14 @@ void ApplicationManager::reloadApplicationSettings()
         //
         // Чтобы все цветовые изменения подхватились, нужно заново переустановить стиль
         //
-        const bool useCompactMode =
-                DataStorageLayer::StorageFacade::settingsStorage()->value(
-                    "application/compact-mode",
-                    DataStorageLayer::SettingsStorage::ApplicationSettings)
-                .toInt();
-        QFile styleSheetFile(
-                    QString(":/Interface/UI/style-desktop%1%2.qss")
-                    .arg(useCompactMode ? "-compact" : "")
-                    .arg(QLocale().textDirection() == Qt::RightToLeft ? "-rtl" : ""));
+        const bool useCompactMode
+            = DataStorageLayer::StorageFacade::settingsStorage()
+                  ->value("application/compact-mode",
+                          DataStorageLayer::SettingsStorage::ApplicationSettings)
+                  .toInt();
+        QFile styleSheetFile(QString(":/Interface/UI/style-desktop%1%2.qss")
+                                 .arg(useCompactMode ? "-compact" : "")
+                                 .arg(QLocale().textDirection() == Qt::RightToLeft ? "-rtl" : ""));
         styleSheetFile.open(QIODevice::ReadOnly);
         QString styleSheet = styleSheetFile.readAll();
         styleSheetFile.close();
@@ -2146,23 +2566,21 @@ void ApplicationManager::reloadApplicationSettings()
         //
         // Настроим боковую панель в зависимости от необходимости быть компактным
         //
-        m_menu->setIcons(QIcon(useCompactMode ? ":/Graphics/Icons/Mobile/menu.png" : ""));
+        m_menu->setIcons(QIcon(useCompactMode ? ":/Graphics/Iconset/menu.svg" : ""));
         m_tabs->setCompactMode(useCompactMode);
     }
 
     //
     // Автосохранение
     //
-    const bool autosave =
-            DataStorageLayer::StorageFacade::settingsStorage()->value(
-                "application/autosave",
-                DataStorageLayer::SettingsStorage::ApplicationSettings)
-            .toInt();
-    const int autosaveInterval =
-            DataStorageLayer::StorageFacade::settingsStorage()->value(
-                "application/autosave-interval",
-                DataStorageLayer::SettingsStorage::ApplicationSettings)
-            .toInt();
+    const bool autosave = DataStorageLayer::StorageFacade::settingsStorage()
+                              ->value("application/autosave",
+                                      DataStorageLayer::SettingsStorage::ApplicationSettings)
+                              .toInt();
+    const int autosaveInterval = DataStorageLayer::StorageFacade::settingsStorage()
+                                     ->value("application/autosave-interval",
+                                             DataStorageLayer::SettingsStorage::ApplicationSettings)
+                                     .toInt();
 
     m_autosaveTimer.stop();
     m_autosaveTimer.disconnect();
@@ -2174,33 +2592,28 @@ void ApplicationManager::reloadApplicationSettings()
     //
     // Создание резервных копий
     //
-    bool saveBackups =
-            DataStorageLayer::StorageFacade::settingsStorage()->value(
-                "application/save-backups",
-                DataStorageLayer::SettingsStorage::ApplicationSettings)
-            .toInt();
-    const QString saveBackupsFolder =
-            DataStorageLayer::StorageFacade::settingsStorage()->value(
-                "application/save-backups-folder",
-                DataStorageLayer::SettingsStorage::ApplicationSettings);
+    bool saveBackups = DataStorageLayer::StorageFacade::settingsStorage()
+                           ->value("application/save-backups",
+                                   DataStorageLayer::SettingsStorage::ApplicationSettings)
+                           .toInt();
+    const QString saveBackupsFolder = DataStorageLayer::StorageFacade::settingsStorage()->value(
+        "application/save-backups-folder", DataStorageLayer::SettingsStorage::ApplicationSettings);
     m_backupHelper.setIsActive(saveBackups);
     m_backupHelper.setBackupDir(saveBackupsFolder);
 
     //
     // Разделение экрана на две панели
     //
-    const bool twoPanelsMode =
-            DataStorageLayer::StorageFacade::settingsStorage()->value(
-                "application/two-panel-mode",
-                DataStorageLayer::SettingsStorage::ApplicationSettings)
-            .toInt();
-    m_menu->menu()->actions().value(TWO_PANEL_MODE_MENU_INDEX)->setChecked(twoPanelsMode);
+    const bool twoPanelsMode = DataStorageLayer::StorageFacade::settingsStorage()
+                                   ->value("application/two-panel-mode",
+                                           DataStorageLayer::SettingsStorage::ApplicationSettings)
+                                   .toInt();
+    m_menuManager->menu()->actions().value(kTwoPanelModeMenuIndex)->setChecked(twoPanelsMode);
     //
     // Если не применять этот хак, то в редакторе сценария пропадает курсор
     // Возникает, только когда редактор сценария был на экране, при отключении второй панели
     //
-    if (!twoPanelsMode
-        && m_tabsWidgetsSecondary->currentWidget() == m_scenarioManager->view()) {
+    if (!twoPanelsMode && m_tabsWidgetsSecondary->currentWidget() == m_scenarioManager->view()) {
         m_tabsWidgets->insertWidget(SCENARIO_TAB_INDEX, m_scenarioManager->view());
     }
     m_menuSecondary->setVisible(twoPanelsMode);
@@ -2212,45 +2625,51 @@ void ApplicationManager::reloadApplicationSettings()
     //
     // Активация/деактивация модулей модули
     //
-    const bool showResearchModule =
-            DataStorageLayer::StorageFacade::settingsStorage()->value(
-                "application/modules/research",
-                DataStorageLayer::SettingsStorage::ApplicationSettings)
-            .toInt();
+    const bool showResearchModule
+        = DataStorageLayer::StorageFacade::settingsStorage()
+              ->value("application/modules/research",
+                      DataStorageLayer::SettingsStorage::ApplicationSettings)
+              .toInt();
     m_tabs->tab(RESEARCH_TAB_INDEX)->setVisible(showResearchModule);
     m_tabsSecondary->tab(RESEARCH_TAB_INDEX)->setVisible(showResearchModule);
     //
-    const bool showCardsModule =
-            DataStorageLayer::StorageFacade::settingsStorage()->value(
-                "application/modules/cards",
-                DataStorageLayer::SettingsStorage::ApplicationSettings)
-            .toInt();
+    const bool showCardsModule = DataStorageLayer::StorageFacade::settingsStorage()
+                                     ->value("application/modules/cards",
+                                             DataStorageLayer::SettingsStorage::ApplicationSettings)
+                                     .toInt();
     m_tabs->tab(SCENARIO_CARDS_TAB_INDEX)->setVisible(showCardsModule);
     m_tabsSecondary->tab(SCENARIO_CARDS_TAB_INDEX)->setVisible(showCardsModule);
     //
-    const bool showScenarioModule =
-            DataStorageLayer::StorageFacade::settingsStorage()->value(
-                "application/modules/scenario",
-                DataStorageLayer::SettingsStorage::ApplicationSettings)
-            .toInt();
+    const bool showScenarioModule
+        = DataStorageLayer::StorageFacade::settingsStorage()
+              ->value("application/modules/scenario",
+                      DataStorageLayer::SettingsStorage::ApplicationSettings)
+              .toInt();
     m_tabs->tab(SCENARIO_TAB_INDEX)->setVisible(showScenarioModule);
     m_tabsSecondary->tab(SCENARIO_TAB_INDEX)->setVisible(showScenarioModule);
     //
-    const bool showStatisticsModule =
-            DataStorageLayer::StorageFacade::settingsStorage()->value(
-                "application/modules/statistics",
-                DataStorageLayer::SettingsStorage::ApplicationSettings)
-            .toInt();
+    const bool showStatisticsModule
+        = DataStorageLayer::StorageFacade::settingsStorage()
+              ->value("application/modules/statistics",
+                      DataStorageLayer::SettingsStorage::ApplicationSettings)
+              .toInt();
     m_tabs->tab(STATISTICS_TAB_INDEX)->setVisible(showStatisticsModule);
     m_tabsSecondary->tab(STATISTICS_TAB_INDEX)->setVisible(showStatisticsModule);
+    //
+    const bool showToolsModule = DataStorageLayer::StorageFacade::settingsStorage()
+                                     ->value("application/modules/tools",
+                                             DataStorageLayer::SettingsStorage::ApplicationSettings)
+                                     .toInt();
+    m_tabs->tab(TOOLS_TAB_INDEX)->setVisible(showToolsModule);
+    m_tabsSecondary->tab(TOOLS_TAB_INDEX)->setVisible(showToolsModule);
 
     //
     // Отключим на маленьких экранах некоторые возможности
     //
     QScreen* screen = QApplication::primaryScreen();
     if (screen->availableSize().width() < 1360) {
-        m_menu->menu()->actions()[TWO_PANEL_MODE_MENU_INDEX]->setEnabled(false);
-        m_menu->menu()->actions()[TWO_PANEL_MODE_MENU_INDEX]->setVisible(false);
+        m_menuManager->menu()->actions()[kTwoPanelModeMenuIndex]->setEnabled(false);
+        m_menuManager->menu()->actions()[kTwoPanelModeMenuIndex]->setVisible(false);
         m_settingsManager->disableTwoPanelsMode();
         if (screen->availableSize().width() < 1024) {
             m_settingsManager->disableCompactMode();
@@ -2260,6 +2679,11 @@ void ApplicationManager::reloadApplicationSettings()
 
 void ApplicationManager::updateWindowTitle()
 {
+    if (!m_projectsManager->isCurrentProjectValid()) {
+        m_view->setWindowTitle(tr("KIT Scenarist"));
+        return;
+    }
+
     //
     // Обновим название текущего проекта, если он локальный
     //
@@ -2267,16 +2691,22 @@ void ApplicationManager::updateWindowTitle()
         m_projectsManager->setCurrentProjectName(m_researchManager->scenarioName());
     }
 
-    const QString projectFileName =
-            QString("%1 %2")
-            .arg(ProjectsManager::currentProject().name())
-            .arg(TextUtils::directedText((m_projectsManager->currentProject().isLocal()
-                                          ? tr("on local computer")
-                                          : tr("in cloud")),
-                                         '[', ']'));
+    const QString projectFileName
+        = QString("%1 - %2 %3")
+              .arg(ProjectsManager::currentProject().name())
+              .arg(DataStorageLayer::StorageFacade::scriptVersionStorage()->currentVersionName())
+              .arg(TextUtils::directedText((m_projectsManager->currentProject().isLocal()
+                                                ? tr("on local computer")
+                                                : tr("in cloud")),
+                                           '[', ']'));
+    QString title =
 #ifdef Q_OS_MAC
-    m_view->setWindowTitle(projectFileName);
+        projectFileName;
 #else
-    m_view->setWindowTitle(tr("%1[*] - KIT Scenarist").arg(projectFileName));
+        tr("%1[*] - KIT Scenarist").arg(projectFileName);
 #endif
+    if (!m_projectsManager->currentProject().isWritable()) {
+        title += " - " + tr("Read only");
+    }
+    m_view->setWindowTitle(title);
 }

@@ -66,10 +66,12 @@ namespace UserInterface
         void setApplicationSaveBackupsFolder(const QString& _folder);
         void setApplicationCompactMode(bool _enable);
         void setApplicationTwoPanelMode(bool _use);
+        void setApplicationHidpiScaling(bool _enable);
         void setApplicationModuleResearch(bool _use);
         void setApplicationModuleCards(bool _use);
         void setApplicationModuleScenario(bool _use);
         void setApplicationModuleStatistics(bool _use);
+        void setApplicationModuleTools(bool _use);
 
         void setResearchDefaultFont(const QString& _family, int _size);
 
@@ -104,6 +106,7 @@ namespace UserInterface
         void setScenarioEditCurrentTemplate(const QString& _styleName);
         void setScenarioEditAutoJumpToNextBlock(bool _value);
         void setScenarioEditShowSuggestionsInEmptyBlocks(bool _value);
+        void setScenarioEditAutocompleteNextCharacterForDialogue(bool _value);
         void setScenarioEditUseOpenBracketInDialogueForParenthetical(bool _value);
         void setScenarioEditReviewUseWordHighlight(bool _value);
 
@@ -149,12 +152,14 @@ namespace UserInterface
         void applicationSaveBackupsFolderChanged(const QString&);
         void applicationCompactModeChanged(bool);
         void applicationTwoPanelModeChanged(bool);
+        void applicationHidpiScalingChanged(bool);
         void applicationModuleResearchChanged(bool);
         void applicationModuleCardsChanged(bool);
         void applicationModuleScenarioChanged(bool);
         void applicationModuleCharactersChanged(bool);
         void applicationModuleLocationsChanged(bool);
         void applicationModuleStatisticsChanged(bool);
+        void applicationModuleToolsChanged(bool);
 
         void researchDefaultFontChanged(const QString& _family, int _size);
 
@@ -187,8 +192,9 @@ namespace UserInterface
         void scenarioEditFolderTextColorDarkChanged(const QColor&);
         void scenarioEditFolderBackgroundColorDarkChanged(const QColor&);
         void scenarioEditCurrentTemplateChanged(const QString&);
-        void scenarioEditAutoJumpToNextBlockChanged(bool);
         void scenarioEditShowSuggestionsInEmptyBlocksChanged(bool);
+        void scenarioEditAutoJumpToNextBlockChanged(bool);
+        void scenarioEditAutocompleteNextCharacterForDialogueChanged(bool);
         void scenarioEditUseOpenBracketInDialogueForParenthetical(bool);
         void scenarioEditBlockSettingsChanged(const QString& _block, const QString& _shortcut,
             const QString& _tab, const QString& _enter, const QString& _changeTab,

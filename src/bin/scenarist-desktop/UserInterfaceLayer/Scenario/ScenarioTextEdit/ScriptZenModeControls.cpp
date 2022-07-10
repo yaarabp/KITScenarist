@@ -8,11 +8,16 @@
 
 #include <QApplication>
 #include <QCheckBox>
+#include <QDateTime>
+#include <QGraphicsOpacityEffect>
 #include <QPainter>
+#include <QPropertyAnimation>
 #include <QPushButton>
+#include <QScreen>
 #include <QShortcut>
 #include <QTextBlock>
 #include <QVBoxLayout>
+#include <QLabel>
 
 using UserInterface::ScriptZenModeControls;
 using UserInterface::ScenarioTextEdit;
@@ -33,6 +38,7 @@ namespace {
         QPushButton* styleButton = new QPushButton(_parent);
         styleButton->setCheckable(true);
         styleButton->setProperty("leftAlignedText", true);
+        styleButton->setFocusPolicy(Qt::NoFocus);
 
         _parent->connect(styleButton, &QPushButton::clicked, _parent, &ScriptZenModeControls::changeStyle);
 
@@ -51,42 +57,52 @@ ScriptZenModeControls::ScriptZenModeControls(QWidget* _parent) :
     qApp->installEventFilter(this);
 
     m_quit->setIconSize(QSize(36, 36));
-    m_quit->setIcons(QIcon(":/Graphics/Icons/Editing/close.png"));
-    m_quit->setShortcut(QKeySequence("F5"));
+    m_quit->setIcons(QIcon(":/Graphics/Iconset/close.svg"));
+    m_quit->installEventFilter(this);
     connect(m_quit, &FlatButton::clicked, this, &ScriptZenModeControls::quitPressed);
 
-    m_buttons << ::createStyleButton(this);
-    m_buttons << ::createStyleButton(this);
-    m_buttons << ::createStyleButton(this);
-    m_buttons << ::createStyleButton(this);
-    m_buttons << ::createStyleButton(this);
-    m_buttons << ::createStyleButton(this);
-    m_buttons << ::createStyleButton(this);
-    m_buttons << ::createStyleButton(this);
-    m_buttons << ::createStyleButton(this);
-    m_buttons << ::createStyleButton(this);
-    m_buttons << ::createStyleButton(this);
+    m_duration = new QLabel(this);
+    m_countersInfo = new QLabel(this);
+
+    m_buttons << createStyleButton(this);
+    m_buttons << createStyleButton(this);
+    m_buttons << createStyleButton(this);
+    m_buttons << createStyleButton(this);
+    m_buttons << createStyleButton(this);
+    m_buttons << createStyleButton(this);
+    m_buttons << createStyleButton(this);
+    m_buttons << createStyleButton(this);
+    m_buttons << createStyleButton(this);
+    m_buttons << createStyleButton(this);
+    m_buttons << createStyleButton(this);
     reinitBlockStyles();
+    foreach (QPushButton* button, m_buttons) {
+        button->installEventFilter(this);
+    }
 
     m_keyboardSound->setText(tr("Typewriter sound"));
+    m_keyboardSound->installEventFilter(this);
 
     QVBoxLayout* layout = new QVBoxLayout;
     layout->addSpacing(10);
     layout->addWidget(m_quit, 0, Qt::AlignRight);
+    layout->addStretch(1);
+    layout->addWidget(m_duration);
+    layout->addWidget(m_countersInfo);
     layout->addStretch(1);
     foreach (QPushButton* button, m_buttons) {
         layout->addWidget(button);
     }
     layout->addSpacing(20);
     layout->addWidget(m_keyboardSound);
-    layout->addStretch(2);
+    layout->addStretch(4);
 
     setLayout(layout);
 
     m_hideTimer.setSingleShot(true);
-    m_hideTimer.setInterval(1000);
-    connect(&m_hideTimer, &QTimer::timeout, this, &ScriptZenModeControls::hide);
-    m_hideTimer.start();
+    m_hideTimer.setInterval(2000);
+    connect(&m_hideTimer, &QTimer::timeout, this, &ScriptZenModeControls::hideAnimated);
+    hide();
 }
 
 void ScriptZenModeControls::setEditor(UserInterface::ScenarioTextEdit* _editor)
@@ -140,6 +156,8 @@ void ScriptZenModeControls::reinitBlockStyles()
     for (; itemIndex < m_buttons.count(); ++itemIndex) {
         m_buttons.at(itemIndex)->setVisible(false);
     }
+
+    setReadOnly(m_readOnly);
 }
 
 void ScriptZenModeControls::changeStyle()
@@ -170,17 +188,41 @@ void ScriptZenModeControls::activate(bool _active)
 
         if (m_active) {
             raise();
-            show();
+            showAnimated();
             m_editor->setKeyboardSoundEnabled(m_keyboardSound->isChecked());
+            m_hideTimer.start();
         } else {
-            hide();
+            hideAnimated();
         }
+    }
+}
+
+void ScriptZenModeControls::setDuration(const QString &_duration)
+{
+    m_duration->setText(_duration);
+}
+
+void ScriptZenModeControls::setCountersInfo(const QStringList &_counters)
+{
+    m_countersInfo->setText(_counters.join("<br>"));
+}
+
+void ScriptZenModeControls::setReadOnly(bool _readOnly)
+{
+    m_readOnly = _readOnly;
+
+    m_keyboardSound->setVisible(!m_readOnly);
+    for (auto button : m_buttons) {
+        button->setVisible(!m_readOnly);
     }
 }
 
 bool ScriptZenModeControls::eventFilter(QObject* _watched, QEvent* _event)
 {
     if (m_active) {
+        //
+        // При изменении размера родителя корректируем размер и расположение панели
+        //
         if (_watched == parent()
             && _event->type() == QEvent::Resize) {
             resize(sizeHint().width(), parentWidget()->height());
@@ -189,14 +231,71 @@ bool ScriptZenModeControls::eventFilter(QObject* _watched, QEvent* _event)
                                     ? parentWidget()->width() - width() - margin
                                     : margin;
             move(xCoordinate, 0);
-        } else if (_event->type() == QEvent::MouseMove
-                   || _event->type() == QEvent::Wheel
-                   || _event->type() == QEvent::MouseButtonPress
-                   || _event->type() == QEvent::MouseButtonRelease) {
-            show();
-            m_hideTimer.start();
+        }
+        //
+        // Если курсор мыши вошёл в панель, то останавливаем таймер скрытия, а если вышел - запускаем
+        //
+        else if (_watched->parent() == this) {
+            if (_event->type() == QEvent::Enter) {
+                m_hideTimer.stop();
+                showAnimated();
+            } else if (_event->type() == QEvent::Leave) {
+                m_hideTimer.start();
+            }
+        }
+        //
+        // Показываем панель, только в случае, если курсор был пододвинут к краю экрана
+        //
+        else if (_event->type() == QEvent::MouseMove) {
+            auto mouseEvent = static_cast<QMouseEvent*>(_event);
+            if ((QLocale().textDirection() == Qt::LeftToRight
+                 && mouseEvent->globalX() >= QApplication::primaryScreen()->availableGeometry().right())
+                || (QLocale().textDirection() == Qt::RightToLeft
+                    && mouseEvent->globalX() <= QApplication::primaryScreen()->availableGeometry().left())) {
+                showAnimated();
+                m_hideTimer.start();
+            }
         }
     }
 
     return QFrame::eventFilter(_watched, _event);
+}
+
+void ScriptZenModeControls::showAnimated()
+{
+    if (isVisible()) {
+        return;
+    }
+
+    QPropertyAnimation* opacityAnimation = configureOpacityAnimation(0, 1);
+    show();
+    opacityAnimation->start(QAbstractAnimation::DeleteWhenStopped);
+}
+
+void ScriptZenModeControls::hideAnimated()
+{
+    if (!isVisible()) {
+        return;
+    }
+
+    QPropertyAnimation* opacityAnimation = configureOpacityAnimation(0.95, 0);
+    connect(opacityAnimation, &QPropertyAnimation::finished, this, &ScriptZenModeControls::hide);
+    opacityAnimation->start(QAbstractAnimation::DeleteWhenStopped);
+}
+
+QPropertyAnimation* ScriptZenModeControls::configureOpacityAnimation(qreal _startOpacity, qreal _endOpacity)
+{
+    QGraphicsOpacityEffect* opacityEffect = new QGraphicsOpacityEffect;
+    opacityEffect->setOpacity(_startOpacity);
+    setGraphicsEffect(opacityEffect);
+
+    QPropertyAnimation* opacityAnimation = new QPropertyAnimation(opacityEffect, "opacity");
+    opacityAnimation->setDuration(180);
+    opacityAnimation->setEasingCurve(QEasingCurve::InCirc);
+    opacityAnimation->setStartValue(_startOpacity);
+    opacityAnimation->setEndValue(_endOpacity);
+    connect(opacityAnimation, &QPropertyAnimation::finished, opacityEffect, &QGraphicsOpacityEffect::deleteLater);
+    connect(opacityAnimation, &QPropertyAnimation::finished, [this] { setGraphicsEffect(nullptr); });
+
+    return opacityAnimation;
 }

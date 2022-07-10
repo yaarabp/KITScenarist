@@ -186,6 +186,96 @@ void SettingsView::setApplicationLanguage(int _value)
             m_ui->applicationLanguage->setText(tr("Hebrew"));
             break;
         }
+
+        case 11: {
+            m_ui->applicationLanguage->setText(tr("Polish"));
+            break;
+        }
+
+        case 12: {
+            m_ui->applicationLanguage->setText(tr("Turkish"));
+            break;
+        }
+
+        case 13: {
+            m_ui->applicationLanguage->setText(tr("Hungarian"));
+            break;
+        }
+
+        case 14: {
+            m_ui->applicationLanguage->setText(tr("Italian"));
+            break;
+        }
+
+        case 15: {
+            m_ui->applicationLanguage->setText(tr("Azerbaijani"));
+            break;
+        }
+
+        case 16: {
+            m_ui->applicationLanguage->setText(tr("Telugu"));
+            break;
+        }
+
+        case 17: {
+            m_ui->applicationLanguage->setText(tr("Brazilian Portuguese"));
+            break;
+        }
+
+        case 18: {
+            m_ui->applicationLanguage->setText(tr("Slovenian"));
+            break;
+        }
+
+        case 19: {
+            m_ui->applicationLanguage->setText(tr("Swedish"));
+            break;
+        }
+
+        case 20: {
+            m_ui->applicationLanguage->setText(tr("Dutch"));
+            break;
+        }
+
+        case 21: {
+            m_ui->applicationLanguage->setText(tr("Serbian"));
+            break;
+        }
+
+        case 22: {
+            m_ui->applicationLanguage->setText(tr("Arabic"));
+            break;
+        }
+
+        case 23: {
+            m_ui->applicationLanguage->setText(tr("Greek"));
+            break;
+        }
+
+        case 24: {
+            m_ui->applicationLanguage->setText(tr("Galician"));
+            break;
+        }
+
+        case 25: {
+            m_ui->applicationLanguage->setText(tr("Danish"));
+            break;
+        }
+
+        case 26: {
+            m_ui->applicationLanguage->setText(tr("Belarusian"));
+            break;
+        }
+
+        case 27: {
+            m_ui->applicationLanguage->setText(tr("Cambodian"));
+            break;
+        }
+
+        case 28: {
+            m_ui->applicationLanguage->setText(tr("Croatian"));
+            break;
+        }
     }
 }
 
@@ -224,6 +314,11 @@ void SettingsView::setApplicationTwoPanelMode(bool _use)
     m_ui->applicationTwoPanelMode->setChecked(_use);
 }
 
+void SettingsView::setApplicationHidpiScaling(bool _enable)
+{
+    m_ui->applicationHidpiScaling->setChecked(_enable);
+}
+
 void SettingsView::setApplicationModuleResearch(bool _use)
 {
     m_ui->applicationModuleResearch->setChecked(_use);
@@ -242,6 +337,11 @@ void SettingsView::setApplicationModuleScenario(bool _use)
 void SettingsView::setApplicationModuleStatistics(bool _use)
 {
     m_ui->applicationModuleStatistics->setChecked(_use);
+}
+
+void SettingsView::setApplicationModuleTools(bool _use)
+{
+    m_ui->applicationModuleTools->setChecked(_use);
 }
 
 void SettingsView::setResearchDefaultFont(const QString& _family, int _size)
@@ -410,6 +510,11 @@ void SettingsView::setScenarioEditAutoJumpToNextBlock(bool _value)
 void SettingsView::setScenarioEditShowSuggestionsInEmptyBlocks(bool _value)
 {
     m_ui->showSuggestionsInEmptyBlocks->setChecked(_value);
+}
+
+void SettingsView::setScenarioEditAutocompleteNextCharacterForDialogue(bool _value)
+{
+    m_ui->autocompleteNextCharacterForDialogue->setChecked(_value);
 }
 
 void SettingsView::setScenarioEditUseOpenBracketInDialogueForParenthetical(bool _value)
@@ -724,22 +829,41 @@ void SettingsView::initData()
     //
     // Добавим словари проверки орфографии
     //
-    m_ui->spellCheckingLanguage->addItem(tr("Russian with Yo"), SpellChecker::RussianWithYo);
-    m_ui->spellCheckingLanguage->addItem(tr("Russian"), SpellChecker::Russian);
+    m_ui->spellCheckingLanguage->addItem(tr("Arabic"), SpellChecker::Arabic);
     m_ui->spellCheckingLanguage->addItem(tr("Armenian (Eastern)"), SpellChecker::ArmenianEastern);
     m_ui->spellCheckingLanguage->addItem(tr("Armenian (Western)"), SpellChecker::ArmenianWestern);
-    m_ui->spellCheckingLanguage->addItem(tr("Belorussian"), SpellChecker::Belorussian);
+    m_ui->spellCheckingLanguage->addItem(tr("Azerbaijani"), SpellChecker::Azerbaijani);
+    m_ui->spellCheckingLanguage->addItem(tr("Belarusian"), SpellChecker::Belarusian);
+    m_ui->spellCheckingLanguage->addItem(tr("Catalan"), SpellChecker::Catalan);
+    m_ui->spellCheckingLanguage->addItem(tr("Danish"), SpellChecker::Danish);
+    m_ui->spellCheckingLanguage->addItem(tr("Dutch"), SpellChecker::Dutch);
     m_ui->spellCheckingLanguage->addItem(tr("English (GB)"), SpellChecker::EnglishGB);
     m_ui->spellCheckingLanguage->addItem(tr("English (US)"), SpellChecker::EnglishUS);
     m_ui->spellCheckingLanguage->addItem(tr("Farsi"), SpellChecker::Farsi);
     m_ui->spellCheckingLanguage->addItem(tr("French"), SpellChecker::French);
+    m_ui->spellCheckingLanguage->addItem(tr("Galician"), SpellChecker::Galician);
+    m_ui->spellCheckingLanguage->addItem(tr("German"), SpellChecker::German);
+    m_ui->spellCheckingLanguage->addItem(tr("Greek"), SpellChecker::Greek);
+    m_ui->spellCheckingLanguage->addItem(tr("Greek (Polythonic)"), SpellChecker::GreekPolytonic);
     m_ui->spellCheckingLanguage->addItem(tr("Hebrew"), SpellChecker::Hebrew);
+    m_ui->spellCheckingLanguage->addItem(tr("Hungarian"), SpellChecker::Hungarian);
+    m_ui->spellCheckingLanguage->addItem(tr("Indonesian"), SpellChecker::Indonesian);
+    m_ui->spellCheckingLanguage->addItem(tr("Italian"), SpellChecker::Italian);
     m_ui->spellCheckingLanguage->addItem(tr("Kazakh"), SpellChecker::Kazakh);
+    m_ui->spellCheckingLanguage->addItem(tr("Lithuanian"), SpellChecker::Lithuanian);
+    m_ui->spellCheckingLanguage->addItem(tr("Macedonian"), SpellChecker::Macedonian);
     m_ui->spellCheckingLanguage->addItem(tr("Polish"), SpellChecker::Polish);
     m_ui->spellCheckingLanguage->addItem(tr("Portuguese (Brazil)"), SpellChecker::PortugueseBrazilian);
     m_ui->spellCheckingLanguage->addItem(tr("Portuguese (Portugal)"), SpellChecker::Portuguese);
+    m_ui->spellCheckingLanguage->addItem(tr("Russian with Yo"), SpellChecker::RussianWithYo);
+    m_ui->spellCheckingLanguage->addItem(tr("Russian"), SpellChecker::Russian);
+    m_ui->spellCheckingLanguage->addItem(tr("Serbian"), SpellChecker::Serbian);
+    m_ui->spellCheckingLanguage->addItem(tr("Serbian (Latin script)"), SpellChecker::SerbianLatin);
+    m_ui->spellCheckingLanguage->addItem(tr("Slovenian"), SpellChecker::Slovenian);
     m_ui->spellCheckingLanguage->addItem(tr("Spanish"), SpellChecker::Spanish);
     m_ui->spellCheckingLanguage->addItem(tr("Swedish"), SpellChecker::Swedish);
+    m_ui->spellCheckingLanguage->addItem(tr("Telugu"), SpellChecker::Telugu);
+    m_ui->spellCheckingLanguage->addItem(tr("Turkish"), SpellChecker::Turkish);
     m_ui->spellCheckingLanguage->addItem(tr("Ukrainian"), SpellChecker::Ukrainian);
 }
 
@@ -753,7 +877,7 @@ void SettingsView::initView()
     m_ui->settingsSplitter->setOpaqueResize(false);
     m_ui->settingsSplitter->setStretchFactor(1, 1);
 
-    m_ui->spellCheckingLanguage->setCurrentIndex(0);
+    m_ui->spellCheckingLanguage->setCurrentIndex(-1);
     m_ui->spellCheckingLanguage->setEnabled(false);
     m_ui->browseBackupFolder->updateIcons();
 
@@ -847,10 +971,12 @@ void SettingsView::initConnections()
     connect(m_ui->saveBackupsFolder, SIGNAL(textChanged(QString)), this, SIGNAL(applicationSaveBackupsFolderChanged(QString)));
     connect(m_ui->applicationCompactMode, &QCheckBox::toggled, this, &SettingsView::applicationCompactModeChanged);
     connect(m_ui->applicationTwoPanelMode, &QCheckBox::toggled, this, &SettingsView::applicationTwoPanelModeChanged);
+    connect(m_ui->applicationHidpiScaling, &QCheckBox::toggled, this, &SettingsView::applicationHidpiScalingChanged);
     connect(m_ui->applicationModuleResearch, &QCheckBox::toggled, this, &SettingsView::applicationModuleResearchChanged);
     connect(m_ui->applicationModuleCards, &QCheckBox::toggled, this, &SettingsView::applicationModuleCardsChanged);
     connect(m_ui->applicationModuleScenario, &QCheckBox::toggled, this, &SettingsView::applicationModuleScenarioChanged);
     connect(m_ui->applicationModuleStatistics, &QCheckBox::toggled, this, &SettingsView::applicationModuleStatisticsChanged);
+    connect(m_ui->applicationModuleTools, &QCheckBox::toggled, this, &SettingsView::applicationModuleToolsChanged);
     // ... разработка
     auto notifyResearchDefaultFontChanged = [this] {
         emit researchDefaultFontChanged(m_ui->researchDefaultFont->currentText(), m_ui->researchDefaultFontSize->value());
@@ -882,6 +1008,7 @@ void SettingsView::initConnections()
     connect(m_ui->currentScenarioTemplate, SIGNAL(currentIndexChanged(QString)), this, SIGNAL(scenarioEditCurrentTemplateChanged(QString)));
     connect(m_ui->autoJumpToNextBlock, SIGNAL(toggled(bool)), this, SIGNAL(scenarioEditAutoJumpToNextBlockChanged(bool)));
     connect(m_ui->showSuggestionsInEmptyBlocks, &QCheckBox::toggled, this, &SettingsView::scenarioEditShowSuggestionsInEmptyBlocksChanged);
+    connect(m_ui->autocompleteNextCharacterForDialogue, &QCheckBox::toggled, this, &SettingsView::scenarioEditAutocompleteNextCharacterForDialogueChanged);
     connect(m_ui->useOpenBracketInDialogueForParenthetical, &QCheckBox::toggled, this, &SettingsView::scenarioEditUseOpenBracketInDialogueForParenthetical);
     connect(m_ui->reviewUseWordHighlight, SIGNAL(toggled(bool)), this, SIGNAL(scenarioEditReviewUseWordHighlightChanged(bool)));
     // ... навигатор

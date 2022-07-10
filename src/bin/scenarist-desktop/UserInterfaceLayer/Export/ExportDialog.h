@@ -88,11 +88,6 @@ namespace UserInterface
         void setDialoguesNumbering(bool _isChecked);
 
         /**
-         * @brief Установить приставку сцен
-         */
-        void setScenesPrefix(const QString& _prefix);
-
-        /**
          * @brief Установить необходимость сохранения редакторских пометок
          */
         void setSaveReviewMarks(bool _save);
@@ -101,6 +96,16 @@ namespace UserInterface
          * @brief Установить печатать ли титульный лист
          */
         void setPrintTitle(bool _isChecked);
+
+        /**
+         * @brief Установить необходимость печатать водяной знак
+         */
+        void setPrintWatermark(bool _isChecked);
+
+        /**
+         * @brief Установить водяной знак
+         */
+        void setWatermark(const QString& _watermark);
 
         /**
          * @brief Получить настройки экспорта
@@ -130,7 +135,7 @@ namespace UserInterface
         /**
          * @brief Переопределяем, чтобы настроить тип экспорта, перед отображением
          */
-        void setVisible(bool _visible);
+        void setVisible(bool _visible) override;
 
     signals:
         /**
@@ -141,7 +146,7 @@ namespace UserInterface
         /**
          * @brief Показать предварительный просмотр
          */
-        void printPreview();
+        void printPreviewPressed();
 
     private:
         /**

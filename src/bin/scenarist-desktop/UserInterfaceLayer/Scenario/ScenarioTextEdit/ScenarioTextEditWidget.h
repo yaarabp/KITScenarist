@@ -57,12 +57,27 @@ namespace UserInterface
         /**
          * @brief Установить значения счётчиков
          */
-        void setCountersInfo(const QString& _counters);
+        void setCountersInfo(const QStringList& _counters);
 
         /**
          * @brief Включить/выключить отображение номеров сцен
          */
         void setShowScenesNumbers(bool _show);
+
+        /**
+         * @brief Задать верхний колонтитул
+         */
+        void setScriptHeader(const QString& _header);
+
+        /**
+         * @brief Задать нижний колонтитул
+         */
+        void setScriptFooter(const QString& _footer);
+
+        /**
+         * @brief Задать префикс номеров сцен
+         */
+        void setSceneNumbersPrefix(const QString& _prefix);
 
         /**
          * @brief Включить/выключить отображение номеров реплик
@@ -98,7 +113,12 @@ namespace UserInterface
         /**
          * @brief Показывать ли автодополнения в пустых блоках
          */
-        void setShowSuggestionsInEmptyBlocks(bool _show);
+        void setShowAutocompletionInEmptyBlocks(bool _show);
+
+        /**
+         * @brief Подбирать ли варианты персонажей по контексту
+         */
+        void setAutocompleteNextCharacterForDialogue(bool _show);
 
         /**
          * @brief Установить язык проверки орфографии
@@ -133,14 +153,14 @@ namespace UserInterface
         /**
          * @brief Добавить элемент в указанной позиции с заданным текстом и типом
          */
-        void addItem(int _position, int _type, const QString& _header, const QString& _title,
-            const QColor& _color, const QString& _description);
+        void addItem(int _position, int _type, const QString& _name, const QString& _header,
+            const QString& _description, const QColor& _color);
 
         /**
          * @brief Изменить элемент в указанной позиции с заданным текстом и типом
          */
-        void editItem(int _startPosition, int _endPosition, int _type, const QString& _title,
-            const QString& _colors, const QString& _description);
+        void editItem(int _startPosition, int _type, const QString& _name, const QString& _header,
+            const QString& _colors);
 
         /**
          * @brief Удалить текст в заданном интервале
@@ -156,6 +176,11 @@ namespace UserInterface
          * @brief Обновить горячие клавиши смены блоков
          */
         void updateShortcuts();
+
+        /**
+         * @brief Обновить панель инструментов
+         */
+        void updateToolBar();
 
         /**
          * @brief Установить список дополнительных курсоров для отрисовки
@@ -234,6 +259,21 @@ namespace UserInterface
          * @brief Выйти из дзен режима
          */
         void quitFromZenMode();
+
+        /**
+         * @brief Пользователь хочет добавить закладку в заданном месте документа
+         */
+        void addBookmarkRequested(int _position);
+
+        /**
+         * @brief Пользователь хочет убрать закладку в заданном месте документа
+         */
+        void removeBookmarkRequested(int _position);
+
+        /**
+         * @brief Пользователь хочет переименовать номер сцены
+         */
+        void renameSceneNumberRequested(const QString& _newName, int _position);
 
     private slots:
         /**

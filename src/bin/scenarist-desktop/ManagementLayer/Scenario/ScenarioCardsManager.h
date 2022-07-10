@@ -1,13 +1,10 @@
 #ifndef SCENARIOCARDSMANAGER_H
 #define SCENARIOCARDSMANAGER_H
 
+#include <QModelIndexList>
 #include <QObject>
 
 class QPrinter;
-
-namespace Domain {
-    class Scenario;
-}
 
 namespace BusinessLogic {
     class ScenarioModel;
@@ -16,7 +13,7 @@ namespace BusinessLogic {
 namespace UserInterface {
     class PrintCardsDialog;
     class ScenarioCardsView;
-    class ScenarioSchemeItemDialog;
+    class ScenarioItemDialog;
 }
 
 
@@ -101,14 +98,14 @@ namespace ManagementLayer
         /**
          * @brief Запрос на добавление элемента
          */
-        void addCardRequest(const QModelIndex& _afterItemIndex, int _type, const QString& _title,
-            const QColor& _color, const QString& _description);
+        void addCardRequest(const QModelIndex& _afterItemIndex, int _type, const QString& _name,
+            const QString& _header, const QString& _description, const QColor& _color);
 
         /**
          * @brief Запрос на изменение элемента
          */
         void updateCardRequest(const QModelIndex& _index, int _type, const QString& _title,
-            const QString& _colors, const QString& _description);
+            const QString& _header, const QString& _description, const QString& _colors);
 
         /**
          * @brief Запрос на удаление элемента
@@ -118,7 +115,7 @@ namespace ManagementLayer
         /**
          * @brief Изменились цвета карточки
          */
-        void cardColorsChanged(const QModelIndex& _index, const QString& _colors);
+        void cardColorsChanged(const QModelIndexList& _index, const QString& _colors);
 
         /**
          * @brief Изменился штамп карточки
@@ -200,17 +197,12 @@ namespace ManagementLayer
         /**
          * @brief Диалог добавления элемента
          */
-        UserInterface::ScenarioSchemeItemDialog* m_addItemDialog = nullptr;
+        UserInterface::ScenarioItemDialog* m_addItemDialog = nullptr;
 
         /**
          * @brief Диалог печати
          */
         UserInterface::PrintCardsDialog* m_printDialog = nullptr;
-
-        /**
-         * @brief Сценарий
-         */
-        Domain::Scenario* m_scenario = nullptr;
 
         /**
          * @brief Модель сценария

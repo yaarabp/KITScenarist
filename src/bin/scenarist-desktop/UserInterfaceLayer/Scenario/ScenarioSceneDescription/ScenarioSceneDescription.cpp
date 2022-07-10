@@ -28,7 +28,7 @@ ScenarioSceneDescription::ScenarioSceneDescription(QWidget* _parent) :
 
 void ScenarioSceneDescription::setTitle(const QString& _title)
 {
-    const QString newTitle = _title.toUpper();
+    const QString newTitle = TextEditHelper::smartToUpper(_title);
     if (currentTitle() != newTitle) {
         disconnect(m_title, &QLineEdit::textChanged, this, &ScenarioSceneDescription::aboutTitleChanged);
 
@@ -65,6 +65,7 @@ void ScenarioSceneDescription::setDescription(const QString& _description)
 void ScenarioSceneDescription::setCommentOnly(bool _isCommentOnly)
 {
     m_title->setReadOnly(_isCommentOnly);
+    m_copyToScript->setVisible(!_isCommentOnly);
     m_description->setReadOnly(_isCommentOnly);
 }
 
@@ -92,7 +93,7 @@ void ScenarioSceneDescription::aboutDescriptionChanged()
 
 QString ScenarioSceneDescription::currentTitle() const
 {
-    return m_title->text().toUpper().simplified();
+    return TextEditHelper::smartToUpper(m_title->text()).simplified();
 }
 
 QString ScenarioSceneDescription::currentDescription() const

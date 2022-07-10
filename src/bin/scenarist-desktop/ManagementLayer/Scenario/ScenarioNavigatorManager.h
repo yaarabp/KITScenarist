@@ -61,9 +61,19 @@ namespace ManagementLayer
         void setSceneDescriptionVisible(bool _visible);
 
         /**
+         * @brief Установить видимость закладок сценария
+         */
+        void setScriptBookmarksVisible(bool _visible);
+
+        /**
          * @brief Установить видимость справочников сценария
          */
         void setScriptDictionariesVisible(bool _visible);
+
+        /**
+         * @brief Установить префикс номеров сцен
+         */
+        void setSceneNumbersPrefix(const QString& _prefix);
 
         /**
          * @brief Установить режим работы со сценарием
@@ -74,8 +84,8 @@ namespace ManagementLayer
         /**
          * @brief Запрос на добавление элемента
          */
-        void addItem(const QModelIndex& _afterItemIndex, int _itemType, const QString& _header,
-            const QColor& _color, const QString& _description);
+        void addItem(const QModelIndex& _afterItemIndex, int _itemType, const QString& _name,
+            const QString& _header, const QString& _description, const QColor& _color);
 
         /**
          * @brief Запрос на удаление элемента
@@ -85,7 +95,7 @@ namespace ManagementLayer
         /**
          * @brief Запрос на установку цвета элемента
          */
-        void setItemColors(const QModelIndex& _indexes, const QString& _colors);
+        void setItemsColors(const QModelIndexList& _indexes, const QString& _colors);
 
         /**
          * @brief Запрос на изменения типа текущего элемента
@@ -101,6 +111,11 @@ namespace ManagementLayer
          * @brief Показать/скрыть заметки к сцене
          */
         void sceneDescriptionVisibleChanged(bool _visible);
+
+        /**
+         * @brief Показать/скрыть закладки сценария
+         */
+        void scriptBookmarksVisibleChanged(bool _visible);
 
         /**
          * @brief Показать/скрыть справочнии сценария
@@ -137,7 +152,7 @@ namespace ManagementLayer
         /**
          * @brief Установить цвета элемента
          */
-        void aboutSetItemColors(const QModelIndex& _index, const QString& _colors);
+        void aboutSetItemColors(const QModelIndexList& _indexes, const QString& _colors);
 
         /**
          * @brief Сменить тип элемента

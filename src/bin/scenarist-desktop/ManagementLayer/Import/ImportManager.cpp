@@ -5,6 +5,7 @@
 
 #include <BusinessLayer/ScenarioDocument/ScenarioDocument.h>
 #include <BusinessLayer/ScenarioDocument/ScenarioTextDocument.h>
+#include <BusinessLayer/Import/CeltxImporter.h>
 #include <BusinessLayer/Import/KitScenaristImporter.h>
 #include <BusinessLayer/Import/DocumentImporter.h>
 #include <BusinessLayer/Import/FdxImporter.h>
@@ -34,28 +35,19 @@ namespace {
     /**
      * @brief Старый вордовский формат не поддерживается
      */
-    const QString MS_DOC_EXTENSION = ".doc";
+    const QString kMsDocExtension = ".doc";
 
     /**
-     * @brief Формат файлов КИТ Сценарист
+     * @brief Форматы файлов импорт которых поддерживается
      */
-    const QString KIT_SCENARIST_EXTENSION = ".kitsp";
-
-    /**
-     * @brief Формат файлов Final Draft
-     */
-    const QString FINAL_DRAFT_EXTENSION = ".fdx";
-    const QString FINAL_DRAFT_TEMPLATE_EXTENSION = ".fdxt";
-
-    /**
-     * @brief Формат файлов Trelby
-     */
-    const QString TRELBY_EXTENSION = ".trelby";
-
-    /**
-     * @brief Формат файлов Fountain
-     */
-    const QString FOUNTAIN_EXTENSION = ".fountain";
+    /** @{ */
+    const QString kKitScenaristExtension = ".kitsp";
+    const QString kFinalDraftExtension = ".fdx";
+    const QString kFinalDraftTemplateExtension = ".fdxt";
+    const QString kTrelbyExtension = ".trelby";
+    const QString kFountainExtension = ".fountain";
+    const QString kCeltxExtension = ".celtx";
+    /** @} */
 
     /**
      * @brief Сохранить импортированный документ разработки со вложенными документами
@@ -91,6 +83,11 @@ namespace {
             document->setImage(ImageHelper::imageFromBytes(_documentData["image"].toByteArray()));
         }
         //
+        // И обновим, т.к. добавились дополнительные данные
+        //
+        DataStorageLayer::StorageFacade::researchStorage()->updateResearch(document);
+
+        //
         // Загрузим дочерние элементы, если есть
         //
         if (_documentData.contains("childs")) {
@@ -104,12 +101,23 @@ namespace {
      * @brief Сохранить импортированного персонажа
      */
     static void storeCharacter(const QVariantMap& _characterData) {
+        //
+        // Загрузим данные
+        //
         const QString name = _characterData["name"].toString();
+        if (name.isEmpty()) {
+            return;
+        }
+
         auto* character = DataStorageLayer::StorageFacade::researchStorage()->character(name);
         if (character == nullptr) {
             character = DataStorageLayer::StorageFacade::researchStorage()->storeCharacter(name);
         }
         character->addDescription(_characterData["description"].toString());
+        //
+        // И обновим, т.к. добавились дополнительные данные
+        //
+        DataStorageLayer::StorageFacade::researchStorage()->updateCharacter(character);
 
         for (const QVariant& childDocumentData : _characterData["childs"].toList()) {
             storeResearchDocument(childDocumentData.toMap(), character);
@@ -120,12 +128,23 @@ namespace {
      * @brief Сохранить импортированную локацию
      */
     static void storeLocation(const QVariantMap& _locationData) {
+        //
+        // Загрузим данные
+        //
         const QString name = _locationData["name"].toString();
+        if (name.isEmpty()) {
+            return;
+        }
+
         auto* location = DataStorageLayer::StorageFacade::researchStorage()->location(name);
         if (location == nullptr) {
             location = DataStorageLayer::StorageFacade::researchStorage()->storeLocation(name);
         }
         location->addDescription(_locationData["description"].toString());
+        //
+        // И обновим, т.к. добавились дополнительные данные
+        //
+        DataStorageLayer::StorageFacade::researchStorage()->updateLocation(location);
 
         for (const QVariant& childDocumentData : _locationData["childs"].toList()) {
             storeResearchDocument(childDocumentData.toMap(), location);
@@ -145,19 +164,23 @@ ImportManager::ImportManager(QObject* _parent, QWidget* _parentWidget) :
 bool ImportManager::importScenario(BusinessLogic::ScenarioDocument* _scenario, int _cursorPosition,
     const BusinessLogic::ImportParameters& _importParameters)
 {
+    using namespace DataStorageLayer;
+
     //
     // Получим xml-представление импортируемого сценария
     //
     QScopedPointer<BusinessLogic::AbstractImporter> importer;
-    if (_importParameters.filePath.toLower().endsWith(KIT_SCENARIST_EXTENSION)) {
+    if (_importParameters.filePath.toLower().endsWith(kKitScenaristExtension)) {
         importer.reset(new BusinessLogic::KitScenaristImporter);
-    } else if (_importParameters.filePath.toLower().endsWith(FINAL_DRAFT_EXTENSION)
-               || _importParameters.filePath.toLower().endsWith(FINAL_DRAFT_TEMPLATE_EXTENSION)) {
+    } else if (_importParameters.filePath.toLower().endsWith(kFinalDraftExtension)
+               || _importParameters.filePath.toLower().endsWith(kFinalDraftTemplateExtension)) {
         importer.reset(new BusinessLogic::FdxImporter);
-    } else if (_importParameters.filePath.toLower().endsWith(TRELBY_EXTENSION)) {
+    } else if (_importParameters.filePath.toLower().endsWith(kTrelbyExtension)) {
         importer.reset(new BusinessLogic::TrelbyImporter);
-    } else if (_importParameters.filePath.toLower().endsWith(FOUNTAIN_EXTENSION)) {
+    } else if (_importParameters.filePath.toLower().endsWith(kFountainExtension)) {
         importer.reset(new BusinessLogic::FountainImporter);
+    } else if (_importParameters.filePath.toLower().endsWith(kCeltxExtension)) {
+        importer.reset(new BusinessLogic::CeltxImporter);
     } else {
         importer.reset(new BusinessLogic::DocumentImporter);
     }
@@ -178,7 +201,9 @@ bool ImportManager::importScenario(BusinessLogic::ScenarioDocument* _scenario, i
     int insertPosition = 0;
     switch (_importParameters.insertionMode) {
         case BusinessLogic::ImportParameters::ReplaceDocument: {
-            _scenario->clear();
+            QTextCursor cursor(_scenario->document());
+            cursor.select(QTextCursor::Document);
+            cursor.deleteChar();
             insertPosition = 0;
             break;
         }
@@ -226,7 +251,7 @@ bool ImportManager::importScenario(BusinessLogic::ScenarioDocument* _scenario, i
             //
             DatabaseLayer::Database::transaction();
             foreach (const QString& character, charactersToDelete) {
-                DataStorageLayer::StorageFacade::researchStorage()->removeCharacter(character);
+                StorageFacade::researchStorage()->removeCharacter(character);
             }
             DatabaseLayer::Database::commit();
 
@@ -235,8 +260,8 @@ bool ImportManager::importScenario(BusinessLogic::ScenarioDocument* _scenario, i
             //
             DatabaseLayer::Database::transaction();
             foreach (const QString& character, characters) {
-                if (!DataStorageLayer::StorageFacade::researchStorage()->hasCharacter(character)) {
-                    DataStorageLayer::StorageFacade::researchStorage()->storeCharacter(character);
+                if (!StorageFacade::researchStorage()->hasCharacter(character)) {
+                    StorageFacade::researchStorage()->storeCharacter(character);
                 }
             }
             DatabaseLayer::Database::commit();
@@ -265,7 +290,7 @@ bool ImportManager::importScenario(BusinessLogic::ScenarioDocument* _scenario, i
             //
             DatabaseLayer::Database::transaction();
             foreach (const QString& location, locationsToDelete) {
-                DataStorageLayer::StorageFacade::researchStorage()->removeLocation(location);
+                StorageFacade::researchStorage()->removeLocation(location);
             }
             DatabaseLayer::Database::commit();
 
@@ -274,8 +299,8 @@ bool ImportManager::importScenario(BusinessLogic::ScenarioDocument* _scenario, i
             //
             DatabaseLayer::Database::transaction();
             foreach (const QString& location, locations) {
-                if (!DataStorageLayer::StorageFacade::researchStorage()->hasLocation(location)) {
-                    DataStorageLayer::StorageFacade::researchStorage()->storeLocation(location);
+                if (!StorageFacade::researchStorage()->hasLocation(location)) {
+                    StorageFacade::researchStorage()->storeLocation(location);
                 }
             }
             DatabaseLayer::Database::commit();
@@ -293,14 +318,34 @@ bool ImportManager::importScenario(BusinessLogic::ScenarioDocument* _scenario, i
         //
         {
             const QVariantMap script = research["script"].toMap();
-            DataStorageLayer::StorageFacade::scenarioDataStorage()->setName(script["name"].toString());
-            DataStorageLayer::StorageFacade::scenarioDataStorage()->setLogline(script["logline"].toString());
-            DataStorageLayer::StorageFacade::scenarioDataStorage()->setAdditionalInfo(script["additional_info"].toString());
-            DataStorageLayer::StorageFacade::scenarioDataStorage()->setGenre(script["genre"].toString());
-            DataStorageLayer::StorageFacade::scenarioDataStorage()->setAuthor(script["author"].toString());
-            DataStorageLayer::StorageFacade::scenarioDataStorage()->setContacts(script["contacts"].toString());
-            DataStorageLayer::StorageFacade::scenarioDataStorage()->setYear(script["year"].toString());
-            DataStorageLayer::StorageFacade::scenarioDataStorage()->setSynopsis(script["synopsis"].toString());
+            auto updateValue = [](const QString& _oldValue, const QVariant& _newValue,
+                                  std::function<void(QString)> _setter, const QString _separator = " ") {
+                QString updatedValue = _oldValue;
+                if (!updatedValue.isEmpty() && !_newValue.toString().isEmpty()) {
+                    updatedValue += _separator;
+                }
+                updatedValue += _newValue.toString();
+                _setter(updatedValue);
+            };
+            updateValue(StorageFacade::scenarioDataStorage()->name(), script["name"],
+                [](const QString& value) { StorageFacade::scenarioDataStorage()->setName(value); });
+            updateValue(StorageFacade::scenarioDataStorage()->logline(), script["logline"],
+                [](const QString& value) { StorageFacade::scenarioDataStorage()->setLogline(value); },
+                "<br/>");
+            updateValue(StorageFacade::scenarioDataStorage()->additionalInfo(), script["additional_info"],
+                [](const QString& value) { StorageFacade::scenarioDataStorage()->setAdditionalInfo(value); });
+            updateValue(StorageFacade::scenarioDataStorage()->genre(), script["genre"],
+                [](const QString& value) { StorageFacade::scenarioDataStorage()->setGenre(value); });
+            updateValue(StorageFacade::scenarioDataStorage()->author(), script["author"],
+                [](const QString& value) { StorageFacade::scenarioDataStorage()->setAuthor(value); });
+            updateValue(StorageFacade::scenarioDataStorage()->contacts(), script["contacts"],
+                [](const QString& value) { StorageFacade::scenarioDataStorage()->setContacts(value); },
+                "\n");
+            updateValue(StorageFacade::scenarioDataStorage()->year(), script["year"],
+                [](const QString& value) { StorageFacade::scenarioDataStorage()->setYear(value); });
+            updateValue(StorageFacade::scenarioDataStorage()->synopsis(), script["synopsis"],
+                [](const QString& value) { StorageFacade::scenarioDataStorage()->setSynopsis(value); },
+                "<br/>");
         }
 
         //
@@ -356,7 +401,7 @@ void ImportManager::importScenario(BusinessLogic::ScenarioDocument* _scenario, i
         // Формат MS DOC не поддерживается, он отображается только для того, чтобы пользователи
         // не теряли свои файлы
         //
-        if (importParameters.filePath.toLower().endsWith(MS_DOC_EXTENSION)) {
+        if (importParameters.filePath.toLower().endsWith(kMsDocExtension)) {
             QLightBoxMessage::critical(m_importDialog, tr("File format not supported"),
                 tr("Microsoft <b>DOC</b> files are not supported. You need save it to <b>DOCX</b> file and reimport."));
             return;

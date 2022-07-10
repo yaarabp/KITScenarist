@@ -1,4 +1,4 @@
-Name: scenarist
+Name: scenarist    
 License: GPLv3
 Group: Applicaton/Publishing
 Summary: KIT Scenarist es una programa de guión, que se desarrolla en Rusia.

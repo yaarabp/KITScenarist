@@ -4,6 +4,7 @@
 #include "ScenarioNavigatorManager.h"
 #include "ScenarioSceneDescriptionManager.h"
 #include "ScenarioTextEditManager.h"
+#include "ScriptBookmarksManager.h"
 #include "ScriptDictionariesManager.h"
 
 #include <Domain/Research.h>
@@ -16,6 +17,8 @@
 #include <BusinessLayer/ScenarioDocument/ScenarioTemplate.h>
 #include <BusinessLayer/ScenarioDocument/ScenarioTextBlockParsers.h>
 #include <BusinessLayer/ScenarioDocument/ScenarioTextDocument.h>
+#include <BusinessLayer/ScenarioDocument/ScenarioModel.h>
+#include <BusinessLayer/ScenarioDocument/ScriptTextCursor.h>
 
 #include <DataLayer/Database/Database.h>
 
@@ -23,10 +26,12 @@
 #include <DataLayer/DataStorageLayer/ScenarioStorage.h>
 #include <DataLayer/DataStorageLayer/ScenarioChangeStorage.h>
 #include <DataLayer/DataStorageLayer/ScenarioDataStorage.h>
+#include <DataLayer/DataStorageLayer/ScriptVersionStorage.h>
 #include <DataLayer/DataStorageLayer/ResearchStorage.h>
 #include <DataLayer/DataStorageLayer/SettingsStorage.h>
 
 #include <3rd_party/Helpers/DiffMatchPatchHelper.h>
+#include <3rd_party/Helpers/RunOnce.h>
 #include <3rd_party/Helpers/ShortcutHelper.h>
 #include <3rd_party/Widgets/FlatButton/FlatButton.h>
 #include <3rd_party/Widgets/QLightBoxWidget/qlightboxmessage.h>
@@ -36,12 +41,14 @@
 #include <QComboBox>
 #include <QHBoxLayout>
 #include <QLabel>
-#include <QTextCursor>
-#include <QTextBlock>
-#include <QTimer>
+#include <QShortcut>
 #include <QSet>
 #include <QSplitter>
 #include <QStackedWidget>
+#include <QTextCursor>
+#include <QTextBlock>
+#include <QTextTable>
+#include <QTimer>
 #include <QWidget>
 
 using ManagementLayer::ScenarioManager;
@@ -49,17 +56,13 @@ using ManagementLayer::ScenarioCardsManager;
 using ManagementLayer::ScenarioNavigatorManager;
 using ManagementLayer::ScenarioSceneDescriptionManager;
 using ManagementLayer::ScenarioTextEditManager;
+using ManagementLayer::ScriptBookmarksManager;
 using ManagementLayer::ScriptDictionariesManager;
 using BusinessLogic::ScenarioDocument;
 using BusinessLogic::ScenarioBlockStyle;
+using BusinessLogic::ScriptTextCursor;
 
 namespace {
-
-    /**
-     * @brief Ключ для хранения атрибута последнего размера сплитера
-     */
-    const char* SPLITTER_LAST_SIZES = "last_sizes";
-
     /**
      * @brief Ключ для доступа к черновику сценария
      */
@@ -80,7 +83,8 @@ namespace {
     /** @{ */
     const int DRAFT_PANEL_INDEX = 1;
     const int SCENE_DESCRIPTION_PANEL_INDEX = 2;
-    const int SCRIPT_DICTIONARIES_PANEL_INDEX = 3;
+    const int SCRIPT_BOOKMARKS_PANEL_INDEX = 3;
+    const int SCRIPT_DICTIONARIES_PANEL_INDEX = 4;
     /** @} */
 
     /**
@@ -104,7 +108,7 @@ namespace {
                 //
                 if (ScenarioBlockStyle::forBlock(cursor.block()) == ScenarioBlockStyle::Character) {
                     const QString name = BusinessLogic::CharacterParser::name(cursor.block().text());
-                    if (name == cursor.selectedText().toUpper()) {
+                    if (name == TextEditHelper::smartToUpper(cursor.selectedText())) {
                         replaceSelection = true;
                     }
                 }
@@ -113,7 +117,7 @@ namespace {
                 //
                 else if (ScenarioBlockStyle::forBlock(cursor.block()) == ScenarioBlockStyle::SceneCharacters) {
                     const QStringList names = BusinessLogic::SceneCharactersParser::characters(cursor.block().text());
-                    if (names.contains(cursor.selectedText().toUpper())) {
+                    if (names.contains(TextEditHelper::smartToUpper(cursor.selectedText()))) {
                         //
                         // Убедимся, что выделено именно имя, а не часть другого имени
                         //
@@ -181,7 +185,7 @@ namespace {
                 //
                 if (ScenarioBlockStyle::forBlock(cursor.block()) == ScenarioBlockStyle::SceneHeading) {
                     const QString location = BusinessLogic::SceneHeadingParser::locationName(cursor.block().text());
-                    if (location == cursor.selectedText().toUpper()) {
+                    if (location == TextEditHelper::smartToUpper(cursor.selectedText())) {
                         replaceSelection = true;
                     }
                 }
@@ -200,37 +204,39 @@ namespace {
      * @brief Обновить цвета текста и фона блоков для заданного документа
      */
     static void updateDocumentBlocksColors(QTextDocument* _document) {
-        QTextCursor cursor(_document);
+        ScriptTextCursor cursor(_document);
         cursor.beginEditBlock();
         do {
             cursor.movePosition(QTextCursor::StartOfBlock);
-            ScenarioBlockStyle blockStyle =
-                BusinessLogic::ScenarioTemplateFacade::getTemplate().blockStyle(cursor.block());
+            ScenarioBlockStyle blockStyle
+                    = BusinessLogic::ScenarioTemplateFacade::getTemplate().blockStyle(cursor.block());
             //
             // Если в блоке есть выделения, обновляем цвет только тех частей, которые не входят в выделения
             //
             QTextBlock currentBlock = cursor.block();
             if (!currentBlock.textFormats().isEmpty()) {
-                foreach (const QTextLayout::FormatRange& range, currentBlock.textFormats()) {
+                for (const QTextLayout::FormatRange& range : currentBlock.textFormats()) {
                     if (!range.format.boolProperty(ScenarioBlockStyle::PropertyIsReviewMark)) {
+                        auto charFormat = blockStyle.charFormat();
+                        if (range.format.font().bold()) {
+                            charFormat.setFontWeight(QFont::Bold);
+                        }
+                        if (range.format.font().italic()) {
+                            charFormat.setFontItalic(true);
+                        }
+                        if (range.format.font().underline()) {
+                            charFormat.setFontUnderline(true);
+                        }
                         cursor.setPosition(currentBlock.position() + range.start);
                         cursor.setPosition(cursor.position() + range.length, QTextCursor::KeepAnchor);
-                        cursor.mergeCharFormat(blockStyle.charFormat());
-                        cursor.mergeBlockCharFormat(blockStyle.charFormat());
-                        cursor.mergeBlockFormat(blockStyle.blockFormat());
+                        cursor.mergeCharFormat(charFormat);
                     }
                 }
-                cursor.movePosition(QTextCursor::EndOfBlock);
             }
-            //
-            // Если выделений нет, обновляем блок целиком
-            //
-            else {
-                cursor.movePosition(QTextCursor::EndOfBlock, QTextCursor::KeepAnchor);
-                cursor.mergeCharFormat(blockStyle.charFormat());
-                cursor.mergeBlockCharFormat(blockStyle.charFormat());
-                cursor.mergeBlockFormat(blockStyle.blockFormat());
-            }
+            cursor.movePosition(QTextCursor::EndOfBlock);
+            cursor.mergeBlockCharFormat(blockStyle.charFormat());
+            cursor.mergeBlockFormat(blockStyle.blockFormat());
+
             cursor.movePosition(QTextCursor::NextBlock);
         } while (!cursor.atEnd());
         cursor.endEditBlock();
@@ -249,6 +255,7 @@ ScenarioManager::ScenarioManager(QObject *_parent, QWidget* _parentWidget) :
     m_navigatorManager(new ScenarioNavigatorManager(this, m_view)),
     m_draftNavigatorManager(new ScenarioNavigatorManager(this, m_view, IS_DRAFT)),
     m_sceneDescriptionManager(new ScenarioSceneDescriptionManager(this, m_view)),
+    m_scriptBookmarksManager(new ScriptBookmarksManager(this, m_view)),
     m_scriptDictionariesManager(new ScriptDictionariesManager(this, m_view)),
     m_textEditManager(new ScenarioTextEditManager(this, m_view)),
     m_workModeIsDraft(false)
@@ -289,6 +296,10 @@ void ScenarioManager::loadViewState()
     m_navigatorManager->setSceneDescriptionVisible(isSceneDescriptionVisible);
     m_sceneDescriptionManager->view()->setVisible(isSceneDescriptionVisible);
 
+    const bool isScriptBookmarksVisible = m_navigatorSplitter->sizes().at(SCRIPT_BOOKMARKS_PANEL_INDEX) != 0;
+    m_navigatorManager->setScriptBookmarksVisible(isScriptBookmarksVisible);
+    m_scriptBookmarksManager->view()->setVisible(isScriptBookmarksVisible);
+
     const bool isScriptDictionariesVisible = m_navigatorSplitter->sizes().at(SCRIPT_DICTIONARIES_PANEL_INDEX) != 0;
     m_navigatorManager->setScriptDictionariesVisible(isScriptDictionariesVisible);
     m_scriptDictionariesManager->view()->setVisible(isScriptDictionariesVisible);
@@ -326,6 +337,7 @@ void ScenarioManager::loadCurrentProject()
     //
     m_navigatorManager->setNavigationModel(m_scenario->model());
     m_draftNavigatorManager->setNavigationModel(m_scenarioDraft->model());
+    m_scriptBookmarksManager->setBookmarksModel(m_scenario->document()->bookmarksModel());
     m_scriptDictionariesManager->refresh();
     m_textEditManager->setScenarioDocument(m_scenarioDraft->document(), IS_DRAFT);
     m_textEditManager->setScenarioDocument(m_scenario->document());
@@ -433,6 +445,7 @@ void ScenarioManager::closeCurrentProject()
     m_cardsManager->clear();
     m_navigatorManager->setNavigationModel(nullptr);
     m_draftNavigatorManager->setNavigationModel(nullptr);
+    m_scriptBookmarksManager->setBookmarksModel(nullptr);
     m_textEditManager->setScenarioDocument(nullptr);
 
     //
@@ -448,6 +461,7 @@ void ScenarioManager::setCommentOnly(bool _isCommentOnly)
     m_navigatorManager->setCommentOnly(_isCommentOnly);
     m_draftNavigatorManager->setCommentOnly(_isCommentOnly);
     m_sceneDescriptionManager->setCommentOnly(_isCommentOnly);
+    m_scriptBookmarksManager->setCommentOnly(_isCommentOnly);
     m_scriptDictionariesManager->setCommentOnly(_isCommentOnly);
     m_textEditManager->setCommentOnly(_isCommentOnly);
 }
@@ -455,6 +469,33 @@ void ScenarioManager::setCommentOnly(bool _isCommentOnly)
 bool ScenarioManager::workModeIsDraft() const
 {
     return m_workModeIsDraft;
+}
+
+void ScenarioManager::setScriptHeader(const QString& _header)
+{
+    m_textEditManager->setScriptHeader(_header);
+}
+
+void ScenarioManager::setScriptFooter(const QString& _footer)
+{
+    m_textEditManager->setScriptFooter(_footer);
+}
+
+void ScenarioManager::setSceneNumbersPrefix(const QString& _prefix)
+{
+    m_navigatorManager->setSceneNumbersPrefix(_prefix);
+    m_draftNavigatorManager->setSceneNumbersPrefix(_prefix);
+    m_textEditManager->setSceneNumbersPrefix(_prefix);
+}
+
+void ScenarioManager::setSceneStartNumber(int _startNumber)
+{
+    m_scenario->setSceneStartNumber(_startNumber);
+}
+
+void ScenarioManager::setScenesNumberingLock(bool _fixed)
+{
+    m_scenario->changeSceneNumbersLocking(_fixed);
 }
 
 #ifdef Q_OS_MAC
@@ -475,8 +516,8 @@ void ScenarioManager::aboutTextEditSettingsUpdated()
 
     m_textEditManager->reloadTextEditSettings();
 
-    ::updateDocumentBlocksColors(m_scenario->document());
-    ::updateDocumentBlocksColors(m_scenarioDraft->document());
+    updateDocumentBlocksColors(m_scenario->document());
+    updateDocumentBlocksColors(m_scenarioDraft->document());
 
     //
     // Корректируем текст, т.к. могли измениться настройки отображения, или используемого шаблона
@@ -637,22 +678,141 @@ void ScenarioManager::aboutRefreshLocations()
     }
 }
 
-void ScenarioManager::aboutApplyPatch(const QString& _patch, bool _isDraft)
+void ScenarioManager::aboutApplyPatch(const QString& _patch, bool _isDraft, int _newChangesSize)
 {
-    if (_isDraft) {
-        m_scenarioDraft->document()->applyPatch(_patch);
-    } else {
-        m_scenario->document()->applyPatch(_patch);
+    auto scriptTextDocument = _isDraft ? m_scenarioDraft->document() : m_scenario->document();
+
+    //
+    // Если пришедший патч накладывается без проблем, то просто применяем его
+    //
+    if (scriptTextDocument->canApplyPatch(_patch)) {
+        scriptTextDocument->applyPatch(_patch);
+        return;
+    }
+
+    //
+    // В противном случае:
+    // - сперва откатывает собственные изменения
+    // - затем применяем патч
+    // - а потом возвращаем собственные изменения обратно
+    //
+
+    //
+    // Извлекаем и откатываем список собственный изменений, которые ещё не были синхронизированы
+    //
+    for (int i = 0; i < _newChangesSize; ++i) {
+        const bool forced = true;
+        scriptTextDocument->undoReimpl(forced);
+    }
+
+    //
+    // Применяем патч
+    //
+    if (scriptTextDocument->applyPatch(_patch) == -1) {
+        //
+        // Если наложить патч по месту не удалось, то применяем грубую силу
+        //
+        scriptTextDocument->applyPatches({ _patch });
+    }
+
+    //
+    // Пробуем накатить собственные изменения, если накатить не удалось, то удаляем их
+    //
+    QList<ScenarioChange> changes;
+    for (int i = 0; i < _newChangesSize; ++i) {
+        changes.prepend(*DataStorageLayer::StorageFacade::scenarioChangeStorage()->last());
+        DataStorageLayer::StorageFacade::scenarioChangeStorage()->removeLast();
+    }
+    for (int i = 0; i < changes.size(); ++i) {
+        const bool validateXml = true;
+        const int pos = scriptTextDocument->applyPatch(changes[i].redoPatch(), validateXml);
+        if (pos != -1) {
+            auto change = DataStorageLayer::StorageFacade::scenarioChangeStorage()->append(
+                        changes[i].uuid().toString(), changes[i].datetime().toString("yyyy-MM-dd hh:mm:ss:zzz"),
+                        changes[i].user(), changes[i].undoPatch(), changes[i].redoPatch(), changes[i].isDraft());
+            scriptTextDocument->addUndoChange(change);
+        } else {
+            break;
+        }
     }
 }
 
-void ScenarioManager::aboutApplyPatches(const QList<QString>& _patches, bool _isDraft)
+void ScenarioManager::aboutApplyPatches(const QList<QString>& _patches, bool _isDraft, QList<QPair<QString, QString>>& _newChangesUuids)
 {
-    if (_isDraft) {
-        m_scenarioDraft->document()->applyPatches(_patches);
-    } else {
-        m_scenario->document()->applyPatches(_patches);
+    auto scriptTextDocument = _isDraft ? m_scenarioDraft->document() : m_scenario->document();
+
+    //
+    // Временно сохраним текущую версию текста сценария
+    //
+    const QString currentScriptXml = scriptTextDocument->scenarioXml();
+
+    //
+    // Подгрузим свои изменения из базки и положим их в документ
+    //
+    const int newChangesSize = _newChangesUuids.size();
+    // ... загружаем на одно изменение больше, чтобы всегда оставалось, как минимум одно изменение
+    DataStorageLayer::StorageFacade::scenarioChangeStorage()->loadLast(newChangesSize + 1);
+    scriptTextDocument->updateUndoStack();
+
+    //
+    // Извлекаем и откатываем список собственный изменений, которые ещё не были синхронизированы
+    //
+    for (int i = 0; i < newChangesSize; ++i) {
+        const bool forced = true;
+        scriptTextDocument->undoReimpl(forced);
     }
+
+    //
+    // Применяем патчи
+    //
+    scriptTextDocument->applyPatches(_patches);
+
+    //
+    // Пробуем накатить собственные изменения, если накатить не удалось, то удаляем их из списка для отправки
+    //
+    QList<ScenarioChange> changes;
+    DatabaseLayer::Database::transaction();
+    for (int i = 0; i < newChangesSize; ++i) {
+        changes.prepend(*DataStorageLayer::StorageFacade::scenarioChangeStorage()->last());
+        DataStorageLayer::StorageFacade::scenarioChangeStorage()->removeLast();
+    }
+    DatabaseLayer::Database::commit();
+    for (int i = 0; i < changes.size(); ++i) {
+        const bool validateXml = true;
+        const int pos = scriptTextDocument->applyPatch(changes[i].redoPatch(), validateXml);
+        if (pos != -1) {
+            auto change = DataStorageLayer::StorageFacade::scenarioChangeStorage()->append(
+                        changes[i].uuid().toString(), changes[i].datetime().toString("yyyy-MM-dd hh:mm:ss:zzz"),
+                        changes[i].user(), changes[i].undoPatch(), changes[i].redoPatch(), changes[i].isDraft());
+            scriptTextDocument->addUndoChange(change);
+        } else {
+            for (int j = i; j < changes.size(); ++j) {
+                _newChangesUuids.removeAll({ changes[j].uuid().toString(), changes[j].datetime().toString("yyyy-MM-dd hh:mm:ss:zzz") });
+            }
+            break;
+        }
+    }
+
+    //
+    // Если все патчи накатить не удалось, то сохраняем конфликтную версию в списке версий сценария
+    //
+    if (newChangesSize != _newChangesUuids.size()) {
+        DataStorageLayer::StorageFacade::scriptVersionStorage()->storeScriptVersion(
+            DataStorageLayer::StorageFacade::userName(), QDateTime::currentDateTime(), Qt::red,
+            tr("Conflicted version"), {}, currentScriptXml);
+
+        QLightBoxMessage::information(m_view, tr("Script changes conflict detected"),
+            tr("There are a conflict detected between script state on the cloud service and your offline changes. "
+               "Conflicted version was saved as a separate one and text of the script restored from the cloud. "
+               "You can find conflicted version in the Research - Script - Versions."));
+    }
+}
+
+void ScenarioManager::clearAdditionalCursors()
+{
+    m_cleanCursors.clear();
+    m_draftCursors.clear();
+    m_textEditManager->setAdditionalCursors(m_cleanCursors);
 }
 
 void ScenarioManager::aboutCursorsUpdated(const QMap<QString, int>& _cursors, bool _isDraft)
@@ -715,8 +875,24 @@ void ScenarioManager::setZenMode(bool _isZen)
     m_textEditManager->setZenMode(_isZen);
 }
 
+void ScenarioManager::setScriptXml(const QString& _xml)
+{
+    BusinessLogic::ScenarioTextDocument* document = m_scenario->document();
+    QTextCursor cursor(document);
+    cursor.beginEditBlock();
+    cursor.select(QTextCursor::Document);
+    cursor.removeSelectedText();
+    document->insertFromMime(0, _xml);
+    cursor.endEditBlock();
+}
+
 void ScenarioManager::aboutUndo()
 {
+    const auto canRun = RunOnce::tryRun(Q_FUNC_INFO);
+    if (!canRun) {
+        return;
+    }
+
     aboutSaveScenarioChanges();
     int toScroll = workingScenario()->document()->undoReimpl();
     if (toScroll != -1) {
@@ -727,6 +903,11 @@ void ScenarioManager::aboutUndo()
 
 void ScenarioManager::aboutRedo()
 {
+    const auto canRun = RunOnce::tryRun(Q_FUNC_INFO);
+    if (!canRun) {
+        return;
+    }
+
     int toScroll = workingScenario()->document()->redoReimpl();
     if (toScroll != -1) {
         m_textEditManager->scrollToPosition(toScroll);
@@ -835,7 +1016,7 @@ void ScenarioManager::aboutGoToItemFromCards(const QModelIndex& _index)
 }
 
 void ScenarioManager::aboutAddItemFromCards(const QModelIndex& _afterItemIndex, int _itemType,
-    const QString& _title, const QColor& _color, const QString& _description)
+    const QString& _name, const QString& _header, const QString& _description, const QColor& _color)
 {
     //
     // Карточки добавляются только в режиме чистовика
@@ -848,20 +1029,20 @@ void ScenarioManager::aboutAddItemFromCards(const QModelIndex& _afterItemIndex, 
     } else {
         position = workingScenario()->itemMiddlePosition(_afterItemIndex);
     }
-    m_textEditManager->addScenarioItemFromCards(position, _itemType, _title, _color, _description);
+    m_textEditManager->addScenarioItem(position, _itemType, _name, _header, _description, _color);
 }
 
 void ScenarioManager::aboutAddItem(const QModelIndex& _afterItemIndex, int _itemType,
-    const QString& _header, const QColor& _color, const QString& _description)
+    const QString& _name, const QString& _header, const QString& _description, const QColor& _color)
 {
     setWorkingMode(sender());
 
     const int position = workingScenario()->itemEndPosition(_afterItemIndex);
-    m_textEditManager->addScenarioItem(position, _itemType, _header, _color, _description);
+    m_textEditManager->addScenarioItem(position, _itemType, _name, _header, _description, _color);
 }
 
 void ScenarioManager::aboutUpdateItemFromCards(const QModelIndex& _itemIndex, int _itemType,
-    const QString& _header, const QString& _colors, const QString& _description)
+    const QString& _name, const QString& _header, const QString& _description, const QString& _colors)
 {
     //
     // Изменение элемента из карточек только в режиме чистовика
@@ -869,8 +1050,8 @@ void ScenarioManager::aboutUpdateItemFromCards(const QModelIndex& _itemIndex, in
     setWorkingMode(m_navigatorManager);
 
     const int startPosition = workingScenario()->itemStartPosition(_itemIndex);
-    const int endPosition = workingScenario()->itemEndPosition(_itemIndex);
-    m_textEditManager->editScenarioItem(startPosition, endPosition, _itemType, _header, _colors, _description);
+    m_textEditManager->editScenarioItem(startPosition, _itemType, _name, _header, _colors);
+    workingScenario()->setItemDescriptionAtPosition(startPosition, _description);
 }
 
 void ScenarioManager::aboutRemoveItemFromCards(const QModelIndex& _index)
@@ -892,12 +1073,14 @@ void ScenarioManager::aboutRemoveItems(const QModelIndexList& _indexes)
     m_textEditManager->removeScenarioText(from, to);
 }
 
-void ScenarioManager::aboutSetItemColors(const QModelIndex& _itemIndex, const QString& _colors)
+void ScenarioManager::aboutSetItemsColors(const QModelIndexList& _indexes, const QString& _colors)
 {
     setWorkingMode(sender());
 
-    const int position = workingScenario()->itemStartPosition(_itemIndex);
-    workingScenario()->setItemColorsAtPosition(position, _colors);
+    for (auto index : _indexes) {
+        const int position = workingScenario()->itemStartPosition(index);
+        workingScenario()->setItemColorsAtPosition(position, _colors);
+    }
     m_textEditManager->view()->update();
 
     emit scenarioChanged();
@@ -932,6 +1115,11 @@ void ScenarioManager::setDraftVisible(bool _visible)
 void ScenarioManager::setSceneDescriptionVisible(bool _visible)
 {
     setNavigatorPanelVisible(SCENE_DESCRIPTION_PANEL_INDEX, _visible);
+}
+
+void ScenarioManager::setScriptBookmarksVisible(bool _visible)
+{
+    setNavigatorPanelVisible(SCRIPT_BOOKMARKS_PANEL_INDEX, _visible);
 }
 
 void ScenarioManager::setScriptDictionariesVisible(bool _visible)
@@ -994,6 +1182,7 @@ void ScenarioManager::initData()
 {
     m_navigatorManager->setNavigationModel(m_scenario->model());
     m_draftNavigatorManager->setNavigationModel(m_scenarioDraft->model());
+    m_scriptBookmarksManager->setBookmarksModel(m_scenario->document()->bookmarksModel());
     m_textEditManager->setScenarioDocument(m_scenario->document());
 }
 
@@ -1010,10 +1199,9 @@ void ScenarioManager::initView()
     m_viewEditors->addWidget(m_textEditManager->view());
 
     m_showFullscreen = new FlatButton(m_view);
-    m_showFullscreen->setIcons(QIcon(":/Graphics/Icons/Editing/fullscreen.png"),
-        QIcon(":/Graphics/Icons/Editing/fullscreen_active.png"));
+    m_showFullscreen->setIcons(QIcon(":/Graphics/Iconset/fullscreen.svg"),
+        QIcon(":/Graphics/Iconset/fullscreen-exit.svg"));
     m_showFullscreen->setToolTip(ShortcutHelper::makeToolTip(tr("On/off Fullscreen Mode"), "F5"));
-    m_showFullscreen->setShortcut(Qt::Key_F5);
     m_showFullscreen->setCheckable(true);
 
     QWidget* rightWidget = new QWidget(m_view);
@@ -1030,14 +1218,15 @@ void ScenarioManager::initView()
     rightLayout->addLayout(topLayout);
     rightLayout->addWidget(m_viewEditors, 1);
 
-    m_navigatorSplitter->setObjectName("navigatorScriptEditSplitter");
+    m_navigatorSplitter->setObjectName("navigatorScriptEditSplitter1");
     m_navigatorSplitter->setHandleWidth(1);
     m_navigatorSplitter->setOrientation(Qt::Vertical);
     m_navigatorSplitter->addWidget(m_navigatorManager->view());
     m_navigatorSplitter->addWidget(m_draftNavigatorManager->view());
     m_navigatorSplitter->addWidget(m_sceneDescriptionManager->view());
+    m_navigatorSplitter->addWidget(m_scriptBookmarksManager->view());
     m_navigatorSplitter->addWidget(m_scriptDictionariesManager->view());
-    m_navigatorSplitter->setSizes({1, 0, 0, 0});
+    m_navigatorSplitter->setSizes({1, 0, 0, 0, 0});
 
     m_mainSplitter->setObjectName("mainScenarioEditSplitter");
     m_mainSplitter->setHandleWidth(1);
@@ -1057,13 +1246,17 @@ void ScenarioManager::initView()
 
 void ScenarioManager::initConnections()
 {
+    auto fullscreenShortcut = new QShortcut(QKeySequence("F5"), m_view);
+    connect(fullscreenShortcut, &QShortcut::activated, this, &ScenarioManager::showFullscreen);
+
+
     connect(m_showFullscreen, &FlatButton::clicked, this, &ScenarioManager::showFullscreen);
 
     connect(m_cardsManager, &ScenarioCardsManager::goToCardRequest, this, &ScenarioManager::aboutGoToItemFromCards);
     connect(m_cardsManager, &ScenarioCardsManager::addCardRequest, this, &ScenarioManager::aboutAddItemFromCards);
     connect(m_cardsManager, &ScenarioCardsManager::updateCardRequest, this, &ScenarioManager::aboutUpdateItemFromCards);
     connect(m_cardsManager, &ScenarioCardsManager::removeCardRequest, this, &ScenarioManager::aboutRemoveItemFromCards);
-    connect(m_cardsManager, &ScenarioCardsManager::cardColorsChanged, this, &ScenarioManager::aboutSetItemColors);
+    connect(m_cardsManager, &ScenarioCardsManager::cardColorsChanged, this, &ScenarioManager::aboutSetItemsColors);
     connect(m_cardsManager, &ScenarioCardsManager::cardStampChanged, this, &ScenarioManager::aboutSetItemStamp);
     connect(m_cardsManager, &ScenarioCardsManager::cardTypeChanged, this, &ScenarioManager::aboutChangeItemType);
     connect(m_cardsManager, &ScenarioCardsManager::fullscreenRequest, this, &ScenarioManager::showFullscreen);
@@ -1072,28 +1265,27 @@ void ScenarioManager::initConnections()
 
     connect(m_navigatorManager, &ScenarioNavigatorManager::addItem, this, &ScenarioManager::aboutAddItem);
     connect(m_navigatorManager, &ScenarioNavigatorManager::removeItems, this, &ScenarioManager::aboutRemoveItems);
-    connect(m_navigatorManager, &ScenarioNavigatorManager::setItemColors, this, &ScenarioManager::aboutSetItemColors);
+    connect(m_navigatorManager, &ScenarioNavigatorManager::setItemsColors, this, &ScenarioManager::aboutSetItemsColors);
     connect(m_navigatorManager, &ScenarioNavigatorManager::changeItemTypeRequested, this, &ScenarioManager::aboutChangeItemType);
     connect(m_navigatorManager, &ScenarioNavigatorManager::draftVisibleChanged, this, &ScenarioManager::setDraftVisible);
     connect(m_navigatorManager, &ScenarioNavigatorManager::sceneDescriptionVisibleChanged, this, &ScenarioManager::setSceneDescriptionVisible);
+    connect(m_navigatorManager, &ScenarioNavigatorManager::scriptBookmarksVisibleChanged, this, &ScenarioManager::setScriptBookmarksVisible);
     connect(m_navigatorManager, &ScenarioNavigatorManager::scriptDictionariesVisibleChanged, this, &ScenarioManager::setScriptDictionariesVisible);
-    connect(m_navigatorManager,
-            static_cast<void (ScenarioNavigatorManager::*)(const QModelIndex&)>(&ScenarioNavigatorManager::sceneChoosed),
-            this,
-            static_cast<void (ScenarioManager::*)(const QModelIndex&)>(&ScenarioManager::aboutMoveCursorToItem));
-    connect(m_navigatorManager,
-            static_cast<void (ScenarioNavigatorManager::*)(int)>(&ScenarioNavigatorManager::sceneChoosed),
-            this,
-            static_cast<void (ScenarioManager::*)(int)>(&ScenarioManager::aboutMoveCursorToItem));
+    connect(m_navigatorManager, static_cast<void (ScenarioNavigatorManager::*)(const QModelIndex&)>(&ScenarioNavigatorManager::sceneChoosed),
+            this, static_cast<void (ScenarioManager::*)(const QModelIndex&)>(&ScenarioManager::aboutMoveCursorToItem));
+    connect(m_navigatorManager, static_cast<void (ScenarioNavigatorManager::*)(int)>(&ScenarioNavigatorManager::sceneChoosed),
+            this, static_cast<void (ScenarioManager::*)(int)>(&ScenarioManager::aboutMoveCursorToItem));
     connect(m_navigatorManager, &ScenarioNavigatorManager::undoRequest, this, &ScenarioManager::aboutUndo);
     connect(m_navigatorManager, &ScenarioNavigatorManager::redoRequest, this, &ScenarioManager::aboutRedo);
 
-    connect(m_draftNavigatorManager, SIGNAL(addItem(QModelIndex,int,QString,QColor,QString)), this, SLOT(aboutAddItem(QModelIndex,int,QString,QColor,QString)));
-    connect(m_draftNavigatorManager, SIGNAL(removeItems(QModelIndexList)), this, SLOT(aboutRemoveItems(QModelIndexList)));
-    connect(m_draftNavigatorManager, SIGNAL(setItemColors(QModelIndex,QString)), this, SLOT(aboutSetItemColors(QModelIndex,QString)));
+    connect(m_draftNavigatorManager, &ScenarioNavigatorManager::addItem, this, &ScenarioManager::aboutAddItem);
+    connect(m_draftNavigatorManager, &ScenarioNavigatorManager::removeItems, this, &ScenarioManager::aboutRemoveItems);
+    connect(m_draftNavigatorManager, &ScenarioNavigatorManager::setItemsColors, this, &ScenarioManager::aboutSetItemsColors);
     connect(m_draftNavigatorManager, &ScenarioNavigatorManager::changeItemTypeRequested, this, &ScenarioManager::aboutChangeItemType);
-    connect(m_draftNavigatorManager, SIGNAL(sceneChoosed(QModelIndex)), this, SLOT(aboutMoveCursorToItem(QModelIndex)));
-    connect(m_draftNavigatorManager, SIGNAL(sceneChoosed(int)), this, SLOT(aboutMoveCursorToItem(int)));
+    connect(m_draftNavigatorManager, static_cast<void (ScenarioNavigatorManager::*)(const QModelIndex&)>(&ScenarioNavigatorManager::sceneChoosed),
+            this, static_cast<void (ScenarioManager::*)(const QModelIndex&)>(&ScenarioManager::aboutMoveCursorToItem));
+    connect(m_draftNavigatorManager, static_cast<void (ScenarioNavigatorManager::*)(int)>(&ScenarioNavigatorManager::sceneChoosed),
+            this, static_cast<void (ScenarioManager::*)(int)>(&ScenarioManager::aboutMoveCursorToItem));
     connect(m_draftNavigatorManager, &ScenarioNavigatorManager::undoRequest, this, &ScenarioManager::aboutUndo);
     connect(m_draftNavigatorManager, &ScenarioNavigatorManager::redoRequest, this, &ScenarioManager::aboutRedo);
 
@@ -1101,21 +1293,42 @@ void ScenarioManager::initConnections()
     connect(m_sceneDescriptionManager, &ScenarioSceneDescriptionManager::copyDescriptionToScriptRequested, this, &ScenarioManager::copySceneDescriptionToScript);
     connect(m_sceneDescriptionManager, &ScenarioSceneDescriptionManager::descriptionChanged, this, &ScenarioManager::aboutUpdateCurrentSceneDescription);
 
+    connect(m_scriptBookmarksManager, &ScriptBookmarksManager::addBookmarkRequested, m_scenario, &ScenarioDocument::addBookmark);
+    connect(m_scriptBookmarksManager, &ScriptBookmarksManager::editBookmarkRequested, m_scenario, &ScenarioDocument::addBookmark);
+    connect(m_scriptBookmarksManager, &ScriptBookmarksManager::removeBookmarkRequested, m_scenario, &ScenarioDocument::removeBookmark);
+    connect(m_scriptBookmarksManager, &ScriptBookmarksManager::bookmarkSelected, m_textEditManager, &ScenarioTextEditManager::setCursorPosition);
+
     connect(m_textEditManager, &ScenarioTextEditManager::textModeChanged, this, &ScenarioManager::aboutRefreshCounters);
     connect(m_textEditManager, &ScenarioTextEditManager::cursorPositionChanged, this, &ScenarioManager::aboutUpdateDuration);
     connect(m_textEditManager, &ScenarioTextEditManager::textChanged, [this] { aboutUpdateDuration(m_textEditManager->cursorPosition()); });
     connect(m_textEditManager, &ScenarioTextEditManager::textChanged, this, &ScenarioManager::aboutUpdateCounters);
     connect(m_textEditManager, &ScenarioTextEditManager::cursorPositionChanged, this, &ScenarioManager::aboutUpdateCurrentSceneTitleAndDescription);
     connect(m_textEditManager, &ScenarioTextEditManager::cursorPositionChanged, this, &ScenarioManager::aboutSelectItemInNavigator, Qt::QueuedConnection);
+    connect(m_textEditManager, &ScenarioTextEditManager::cursorPositionChanged, m_scriptBookmarksManager, static_cast<void (ScriptBookmarksManager::*)(int)>(&ScriptBookmarksManager::selectBookmark), Qt::QueuedConnection);
     connect(m_textEditManager, &ScenarioTextEditManager::undoRequest, this, &ScenarioManager::aboutUndo);
     connect(m_textEditManager, &ScenarioTextEditManager::redoRequest, this, &ScenarioManager::aboutRedo);
     connect(m_textEditManager, &ScenarioTextEditManager::quitFromZenMode, this, &ScenarioManager::showFullscreen);
+    connect(m_textEditManager, &ScenarioTextEditManager::addBookmarkRequested, m_scriptBookmarksManager, &ScriptBookmarksManager::addBookmark);
+    connect(m_textEditManager, &ScenarioTextEditManager::removeBookmarkRequested, m_scenario, &ScenarioDocument::removeBookmark);
+    connect(m_textEditManager, &ScenarioTextEditManager::renameSceneNumberRequested, this, [this] (const QString& _newSceneNumber, int _position) {
+        if (m_workModeIsDraft) {
+            m_scenarioDraft->setNewSceneNumber(_newSceneNumber, _position);
+        } else {
+            m_scenario->setNewSceneNumber(_newSceneNumber, _position);
+        }
+    });
 
     connect(&m_saveChangesTimer, SIGNAL(timeout()), this, SLOT(aboutSaveScenarioChanges()));
 
     //
     // Настраиваем отслеживание изменений документа
     //
+    connect(m_scenario, &ScenarioDocument::textChanged, this, &ScenarioManager::scenarioChanged);
+    connect(m_scenario, &ScenarioDocument::fixedScenesChanged, this, [this] (bool _fixed) {
+        m_fixedScenes = _fixed;
+        emit scriptFixedScenesChanged(_fixed);
+    });
+    connect(m_scenarioDraft, &ScenarioDocument::textChanged, this, &ScenarioManager::scenarioChanged);
     connect(m_cardsManager, &ScenarioCardsManager::cardsChanged, this, &ScenarioManager::scenarioChanged);
     connect(m_sceneDescriptionManager, &ScenarioSceneDescriptionManager::titleChanged, this, &ScenarioManager::scenarioChanged);
     connect(m_sceneDescriptionManager, &ScenarioSceneDescriptionManager::descriptionChanged, this, &ScenarioManager::scenarioChanged);

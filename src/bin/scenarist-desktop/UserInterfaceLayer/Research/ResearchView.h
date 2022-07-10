@@ -4,17 +4,28 @@
 #include <QPageSize>
 #include <QWidget>
 
+namespace Domain {
+    class ScriptVersionsTable;
+}
+
+namespace BusinessLogic {
+    class ScenarioTextDocument;
+}
+
 namespace Ui {
     class ResearchView;
 }
 
 class QAbstractItemModel;
 class QItemSelection;
+class ScalableWrapper;
 class SimpleTextEditor;
 
 
 namespace UserInterface
 {
+    class ScenarioTextEdit;
+
     /**
      * @brief Представление разработки
      */
@@ -37,6 +48,26 @@ namespace UserInterface
         void setTextSettings(QPageSize::PageSizeId _pageSize, const QMarginsF& _margins, Qt::Alignment _numberingAlign, const QFont& _font);
 
         /**
+         * @brief Включить/выключить отображение номеров сцен
+         */
+        void setScriptShowScenesNumbers(bool _show);
+
+        /**
+         * @brief Включить/выключить отображение номеров реплик
+         */
+        void setScriptShowDialoguesNumbers(bool _show);
+
+        /**
+         * @brief Настроить цвета текстового редактора
+         */
+        void setScriptTextEditColors(const QColor& _textColor, const QColor& _backgroundColor);
+
+        /**
+         * @brief Задать документ сценария
+         */
+        void setScriptDocument(BusinessLogic::ScenarioTextDocument* _document);
+
+        /**
          * @brief Загрузить модель разработки
          */
         void setResearchModel(QAbstractItemModel* _model);
@@ -54,7 +85,8 @@ namespace UserInterface
         /**
          * @brief Включить режим редактирования сценария
          */
-        void editScenario(const QString& _name, const QString& _logline);
+        void editScript(const QString& _name, const QString& _header, const QString& _footer,
+                        const QString& _scenesPrefix, const QString& _sceneSceneNumber);
 
         /**
          * @brief Включить режим редактирования титульной страницы
@@ -64,9 +96,19 @@ namespace UserInterface
             const QString& _year);
 
         /**
+         * @brief Включить режим редактирования логлайна
+         */
+        void editLogline(const QString& _logline);
+
+        /**
          * @brief Включить режим редактирования синопсиса
          */
         void editSynopsis(const QString& _synopsis);
+
+        /**
+         * @brief Включить режим редактирования версий сценария
+         */
+        void editVersions(QAbstractItemModel* _versions);
 
         /**
          * @brief Включить режим редактирования корня списка персонажей
@@ -138,7 +180,17 @@ namespace UserInterface
          */
         void setExpandedIndexes(const QStringList& _indexes);
 
+        /**
+         * @brief Изменилась блокировка номеров сцен
+         */
+        void setScenesNumberingFixed(bool _fixed);
+
     signals:
+        /**
+         * @brief Пользователь хочет изменить блокировку сцен
+         */
+        void scenesNumberingLockChanged(bool _fixed);
+
         /**
          * @brief Нажата кнопка добавления элемента разработки
          */
@@ -168,13 +220,17 @@ namespace UserInterface
          * @brief Сигналы об изменении данных
          */
         /** @{ */
-        void scenarioNameChanged(const QString& _name);
-        void scenarioLoglineChanged(const QString& _logline);
+        void scriptNameChanged(const QString& _name);
+        void scriptHeaderChanged(const QString& _header);
+        void scriptFooterChanged(const QString& _footer);
+        void scriptSceneNumbersPrefixChanged(const QString& _sceneNumbersPrefix);
+        void scriptSceneStartNumber(const QString& _startSceneNumber);
         void titlePageAdditionalInfoChanged(const QString& _additionalInfo);
         void titlePageGenreChanged(const QString& _genre);
         void titlePageAuthorChanged(const QString& _author);
         void titlePageContactsChanged(const QString& _contacts);
         void titlePageYearChanged(const QString& _year);
+        void loglineTextChanged(const QString& _synopsis);
         void synopsisTextChanged(const QString& _synopsis);
         void characterNameChanged(const QString& _name);
         void characterRealNameChanged(const QString& _name);
@@ -194,6 +250,21 @@ namespace UserInterface
         void mindMapNameChanged(const QString& _name);
         void mindMapChanged(const QString& _xml);
         /** @{ */
+
+        /**
+         * @brief Запрос на добавление версии сценария
+         */
+        void addScriptVersionRequested();
+
+        /**
+         * @brief Запрос на отображение версии сценария
+         */
+        void showScriptVersionRequested(const QModelIndex& _projectIndex);
+
+        /**
+         * @brief Запрос на удаление версии сценария
+         */
+        void removeScriptVersionRequested(const QModelIndex& _projectIndex);
 
     protected:
         /**
@@ -215,7 +286,17 @@ namespace UserInterface
         /**
          * @brief Скрыть/показать кнопку поиска и панель поиска
          */
-        void setSearchVisible(bool _isVisible);
+        void setSearchVisible(bool _isVisible, SimpleTextEditor* _editor = nullptr);
+
+        /**
+         * @brief Скрыть/показать кнопку добавления содержимого контента
+         */
+        void setAddVisible(bool _isVisible);
+
+        /**
+         * @brief Скрыть/показать кнопку возвращения к контенту
+         */
+        void setBackVisible(bool _isVisible);
 
         /**
          * @brief Изменён текущий объект разработки
@@ -258,6 +339,16 @@ namespace UserInterface
          * @brief Интерфейс представления
          */
         Ui::ResearchView* m_ui = nullptr;
+
+        /**
+         * @brief Редактор текста сценария для отображения результатов работы инструментов
+         */
+        ScenarioTextEdit* m_editor = nullptr;
+
+        /**
+         * @brief Обёртка редактора, позволяющая его масштабировать
+         */
+        ScalableWrapper* m_editorWrapper = nullptr;
 
         /**
          * @brief Находится ли текстовый редактор в режиме обновления панели инструментов с форматом

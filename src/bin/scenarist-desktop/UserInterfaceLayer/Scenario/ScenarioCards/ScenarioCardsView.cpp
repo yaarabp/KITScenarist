@@ -1,11 +1,14 @@
 #include "ScenarioCardsView.h"
+
 #include "CardsResizer.h"
+#include "CardsSearchWidget.h"
 
 #include <DataLayer/DataStorageLayer/StorageFacade.h>
 #include <DataLayer/DataStorageLayer/SettingsStorage.h>
 
 #include <3rd_party/Helpers/ShortcutHelper.h>
 
+#include <3rd_party/Widgets/WAF/Animation/Animation.h>
 #include <3rd_party/Widgets/CardsEdit/CardsView.h>
 #include <3rd_party/Widgets/FlatButton/FlatButton.h>
 
@@ -16,6 +19,7 @@
 #include <QMenu>
 #include <QShortcut>
 #include <QStandardPaths>
+#include <QTimer>
 #include <QVariant>
 #include <QWidgetAction>
 
@@ -38,10 +42,12 @@ ScenarioCardsView::ScenarioCardsView(bool _isDraft, QWidget* _parent) :
     m_removeCard(new FlatButton(_parent)),
     m_sort(new FlatButton(_parent)),
     m_resizer(new CardsResizer(m_sort)),
+    m_search(new FlatButton(_parent)),
     m_save(new FlatButton(_parent)),
     m_print(new FlatButton(_parent)),
     m_fullscreen(new FlatButton(_parent)),
-    m_toolbarSpacer(new QLabel(_parent))
+    m_toolbarSpacer(new QLabel(_parent)),
+    m_searchLine(new CardsSearchWidget(_parent))
 {
     initView(_isDraft);
     initConnections();
@@ -107,7 +113,7 @@ void ScenarioCardsView::saveChanges(bool _hasChangesInText)
     m_cards->saveChanges(_hasChangesInText);
 }
 
-void ScenarioCardsView::insertCard(const QString& _uuid, bool _isFolder, int _number,
+void ScenarioCardsView::insertCard(const QString& _uuid, bool _isFolder, const QString& _number,
     const QString& _title, const QString& _description, const QString& _stamp,
     const QString& _colors, bool _isEmbedded, const QString& _previousCardUuid)
 {
@@ -118,7 +124,7 @@ void ScenarioCardsView::insertCard(const QString& _uuid, bool _isFolder, int _nu
     }
 }
 
-void ScenarioCardsView::updateCard(const QString& _uuid, bool _isFolder, int _number,
+void ScenarioCardsView::updateCard(const QString& _uuid, bool _isFolder, const QString& _number,
     const QString& _title, const QString& _description, const QString& _stamp,
     const QString& _colors, bool _isEmbedded, bool _isAct)
 {
@@ -189,6 +195,22 @@ void ScenarioCardsView::resortCards()
     m_cards->setCardsInRow(m_resizer->cardsInRow());
 }
 
+void ScenarioCardsView::setSearchPanelVisible(bool _visible)
+{
+    if (m_searchLine->isVisible() != _visible) {
+        const bool FIX = true;
+        const int slideDuration = WAF::Animation::slide(m_searchLine, WAF::FromBottomToTop, FIX, !FIX, _visible);
+        QTimer::singleShot(slideDuration, [=] { m_searchLine->setVisible(_visible); });
+    }
+
+    if (_visible) {
+        m_searchLine->selectText();
+        m_searchLine->setFocus();
+    } else {
+        m_cards->setFilter({}, true, true, true);
+    }
+}
+
 void ScenarioCardsView::initView(bool _isDraft)
 {
     m_active->hide();
@@ -203,13 +225,13 @@ void ScenarioCardsView::initView(bool _isDraft)
     m_active->setCheckable(true);
     m_active->setToolButtonStyle(Qt::ToolButtonTextOnly);
 
-    m_addCard->setIcons(QIcon(":/Graphics/Icons/Editing/add.png"));
+    m_addCard->setIcons(QIcon(":/Graphics/Iconset/plus.svg"));
     m_addCard->setToolTip(tr("Add new card"));
 
-    m_removeCard->setIcons(QIcon(":/Graphics/Icons/Editing/delete.png"));
+    m_removeCard->setIcons(QIcon(":/Graphics/Iconset/delete.svg"));
     m_removeCard->setToolTip(tr("Remove selected card"));
 
-    m_sort->setIcons(QIcon(":/Graphics/Icons/Cards/table.png"));
+    m_sort->setIcons(QIcon(":/Graphics/Iconset/grid.svg"));
     m_sort->setToolTip(tr("Sort cards"));
     //
     // Настроим меню кнопки упорядочивания карточек по сетке
@@ -223,18 +245,24 @@ void ScenarioCardsView::initView(bool _isDraft)
         m_sort->setMenu(menu);
     }
 
-    m_save->setIcons(QIcon(":/Graphics/Icons/Editing/download.png"));
+    m_search->setIcons(QIcon(":/Graphics/Iconset/magnify.svg"));
+    m_search->setToolTip(tr("Search cards"));
+    m_search->setCheckable(true);
+
+    m_save->setIcons(QIcon(":/Graphics/Iconset/content-save.svg"));
     m_save->setToolTip(tr("Save cards to file"));
 
-    m_print->setIcons(QIcon(":/Graphics/Icons/printer.png"));
+    m_print->setIcons(QIcon(":/Graphics/Iconset/printer.svg"));
     m_print->setToolTip(tr("Print cards"));
 
-    m_fullscreen->setIcons(QIcon(":/Graphics/Icons/Editing/fullscreen.png"),
-        QIcon(":/Graphics/Icons/Editing/fullscreen_active.png"));
+    m_fullscreen->setIcons(QIcon(":/Graphics/Iconset/fullscreen.svg"),
+        QIcon(":/Graphics/Iconset/fullscreen-exit.svg"));
     m_fullscreen->setToolTip(ShortcutHelper::makeToolTip(tr("On/off Fullscreen Mode"), "F5"));
     m_fullscreen->setCheckable(true);
 
     m_toolbarSpacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+
+    m_searchLine->hide();
 
     QWidget* toolbar = new QWidget(this);
     QHBoxLayout* toolbarLayout = new QHBoxLayout(toolbar);
@@ -244,6 +272,7 @@ void ScenarioCardsView::initView(bool _isDraft)
     toolbarLayout->addWidget(m_addCard);
     toolbarLayout->addWidget(m_removeCard);
     toolbarLayout->addWidget(m_sort);
+    toolbarLayout->addWidget(m_search);
     toolbarLayout->addWidget(m_save);
     toolbarLayout->addWidget(m_print);
     toolbarLayout->addWidget(m_toolbarSpacer);
@@ -254,6 +283,7 @@ void ScenarioCardsView::initView(bool _isDraft)
     layout->setSpacing(0);
     layout->addWidget(toolbar);
     layout->addWidget(m_cards);
+    layout->addWidget(m_searchLine);
 
     setLayout(layout);
 }
@@ -298,11 +328,15 @@ void ScenarioCardsView::initConnections()
     connect(m_sort, &FlatButton::clicked, m_sort, &FlatButton::showMenu);
     connect(m_resizer, &CardsResizer::parametersChanged, this, &ScenarioCardsView::resortCards);
 
+    connect(m_search, &FlatButton::toggled, this, &ScenarioCardsView::setSearchPanelVisible);
+
     connect(m_save, &FlatButton::clicked, this, &ScenarioCardsView::saveToImage);
 
     connect(m_print, &FlatButton::clicked, this, &ScenarioCardsView::printRequest);
 
     connect(m_fullscreen, &FlatButton::clicked, this, &ScenarioCardsView::fullscreenRequest);
+
+    connect(m_searchLine, &CardsSearchWidget::searchRequested, m_cards, &CardsView::setFilter);
 }
 
 void ScenarioCardsView::initShortcuts()
@@ -371,6 +405,7 @@ void ScenarioCardsView::initStyleSheet()
     m_removeCard->setProperty("inTopPanel", true);
     m_sort->setProperty("inTopPanel", true);
     m_sort->setProperty("hasMenu", true);
+    m_search->setProperty("inTopPanel", true);
     m_save->setProperty("inTopPanel", true);
     m_print->setProperty("inTopPanel", true);
     m_fullscreen->setProperty("inTopPanel", true);

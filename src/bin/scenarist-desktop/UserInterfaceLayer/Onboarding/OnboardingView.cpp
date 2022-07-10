@@ -3,6 +3,7 @@
 
 #include <3rd_party/Widgets/WAF/StackedWidgetAnimation/StackedWidgetAnimation.h>
 
+#include <QButtonGroup>
 #include <QDesktopWidget>
 #include <QScreen>
 #include <QTimer>
@@ -78,6 +79,7 @@ void OnboardingView::changeEvent(QEvent* _event)
         updateAlignment(m_ui->russianScreenplayCourierPrimeInfo);
         updateAlignment(m_ui->chineseScreenplayInfo);
         updateAlignment(m_ui->hebrewScreenplayInfo);
+        updateAlignment(m_ui->arabicScreenplayInfo);
     } else {
         QWidget::changeEvent(_event);
     }
@@ -121,7 +123,26 @@ void OnboardingView::initConnections()
     languagesGroup->addButton(m_ui->farsi);
     languagesGroup->addButton(m_ui->chinese);
     languagesGroup->addButton(m_ui->hebrew);
-    connect(languagesGroup, static_cast<void (QButtonGroup::*)(int)>(&QButtonGroup::buttonClicked), this, &OnboardingView::notifyLanguageChange);
+    languagesGroup->addButton(m_ui->polish);
+    languagesGroup->addButton(m_ui->turkish);
+    languagesGroup->addButton(m_ui->hungarian);
+    languagesGroup->addButton(m_ui->italian);
+    languagesGroup->addButton(m_ui->azerbaijani);
+    languagesGroup->addButton(m_ui->telugu);
+    languagesGroup->addButton(m_ui->portuguesBrasil);
+    languagesGroup->addButton(m_ui->slovenian);
+    languagesGroup->addButton(m_ui->swedish);
+    languagesGroup->addButton(m_ui->nederlands);
+    languagesGroup->addButton(m_ui->serbian);
+    languagesGroup->addButton(m_ui->arabic);
+    languagesGroup->addButton(m_ui->greek);
+    languagesGroup->addButton(m_ui->galician);
+    languagesGroup->addButton(m_ui->danish);
+    languagesGroup->addButton(m_ui->belarusian);
+    languagesGroup->addButton(m_ui->cambodian);
+    languagesGroup->addButton(m_ui->croatian);
+    connect(languagesGroup, static_cast<void (QButtonGroup::*)(int)>(&QButtonGroup::buttonClicked),
+            this, &OnboardingView::notifyLanguageChange);
     connect(m_ui->darkTheme, &QRadioButton::toggled, this, &OnboardingView::useDarkThemeToggled);
 
     connect(m_ui->skip, &QPushButton::clicked, [this] {
@@ -158,6 +179,42 @@ void OnboardingView::notifyLanguageChange()
         language = 9;
     } else if (m_ui->hebrew->isChecked()) {
         language = 10;
+    } else if (m_ui->polish->isChecked()) {
+        language = 11;
+    } else if (m_ui->turkish->isChecked()) {
+        language = 12;
+    } else if (m_ui->hungarian->isChecked()) {
+        language = 13;
+    } else if (m_ui->italian->isChecked()) {
+        language = 14;
+    } else if (m_ui->azerbaijani->isChecked()) {
+        language = 15;
+    } else if (m_ui->telugu->isChecked()) {
+        language = 16;
+    } else if (m_ui->portuguesBrasil->isChecked()) {
+        language = 17;
+    } else if (m_ui->slovenian->isChecked()) {
+        language = 18;
+    } else if (m_ui->swedish->isChecked()) {
+        language = 19;
+    } else if (m_ui->nederlands->isChecked()) {
+        language = 20;
+    } else if (m_ui->serbian->isChecked()) {
+        language = 21;
+    } else if (m_ui->arabic->isChecked()) {
+        language = 22;
+    } else if (m_ui->greek->isChecked()) {
+        language = 23;
+    } else if (m_ui->galician->isChecked()) {
+        language = 24;
+    } else if (m_ui->danish->isChecked()) {
+        language = 25;
+    } else if (m_ui->belarusian->isChecked()) {
+        language = 26;
+    } else if (m_ui->cambodian->isChecked()) {
+        language = 27;
+    } else if (m_ui->croatian->isChecked()) {
+        language = 28;
     }
 
     emit languageChanged(language);

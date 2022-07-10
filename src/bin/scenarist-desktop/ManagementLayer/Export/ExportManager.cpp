@@ -32,6 +32,7 @@
 #include <QTimer>
 
 using ManagementLayer::ExportManager;
+using ManagementLayer::ExportType;
 using ManagementLayer::ProjectsManager;
 using DataStorageLayer::StorageFacade;
 using UserInterface::ExportDialog;
@@ -79,6 +80,9 @@ void ExportManager::exportScenario(BusinessLogic::ScenarioDocument* _scenario,
         //
         BusinessLogic::ExportParameters exportParameters = m_exportDialog->exportParameters();
         exportParameters.scriptName = _scenarioData.value(ScenarioData::NAME_KEY);
+        exportParameters.scriptHeader = _scenarioData.value(ScenarioData::HEADER_KEY);
+        exportParameters.scriptFooter = _scenarioData.value(ScenarioData::FOOTER_KEY);
+        exportParameters.scenesPrefix = _scenarioData.value(ScenarioData::SCENE_NUMBERS_PREFIX_KEY);
         exportParameters.scriptAdditionalInfo = _scenarioData.value(ScenarioData::ADDITIONAL_INFO_KEY);
         exportParameters.scriptGenre = _scenarioData.value(ScenarioData::GENRE_KEY);
         exportParameters.scriptAuthor = _scenarioData.value(ScenarioData::AUTHOR_KEY);
@@ -105,15 +109,15 @@ void ExportManager::exportScenario(BusinessLogic::ScenarioDocument* _scenario,
                 //
                 // Определим экспортирующего
                 //
-                BusinessLogic::AbstractExporter* exporter = 0;
+                QSharedPointer<BusinessLogic::AbstractExporter> exporter;
                 if (m_exportDialog->exportFormat() == "docx") {
-                    exporter = new BusinessLogic::DocxExporter;
+                    exporter.reset(new BusinessLogic::DocxExporter);
                 } else if (m_exportDialog->exportFormat() == "pdf") {
-                    exporter = new BusinessLogic::PdfExporter;
+                    exporter.reset(new BusinessLogic::PdfExporter);
                 } else if (m_exportDialog->exportFormat() == "fdx") {
-                    exporter = new BusinessLogic::FdxExporter;
+                    exporter.reset(new BusinessLogic::FdxExporter);
                 } else {
-                    exporter = new BusinessLogic::FountainExporter;
+                    exporter.reset(new BusinessLogic::FountainExporter);
                 }
 
                 //
@@ -124,8 +128,6 @@ void ExportManager::exportScenario(BusinessLogic::ScenarioDocument* _scenario,
                 } else {
                     exporter->exportTo(_scenario, exportParameters);
                 }
-                delete exporter;
-                exporter = nullptr;
             }
             //
             // Если невозможно записать в файл
@@ -141,7 +143,7 @@ void ExportManager::exportScenario(BusinessLogic::ScenarioDocument* _scenario,
                         .arg(fileInfo.dir().absolutePath());
                 } else if (fileInfo.exists()) {
                     errorMessage =
-                        tr("Can't write to file. Maybe it opened in other application. Please, close it and retry export.");
+                        tr("Can't write to file. Maybe it is opened by another application. Please close it and retry export.");
                 } else {
                     errorMessage =
                         tr("Can't write to file. Check permissions to write in choosed folder. Please, choose other folder.");
@@ -164,8 +166,8 @@ void ExportManager::exportScenario(BusinessLogic::ScenarioDocument* _scenario,
     m_scenarioData.clear();
 }
 
-void ExportManager::printPreviewScenario(BusinessLogic::ScenarioDocument* _scenario,
-    const QMap<QString, QString>& _scenarioData)
+void ExportManager::printPreview(BusinessLogic::ScenarioDocument* _scenario,
+    const QMap<QString, QString>& _scenarioData, ManagementLayer::ExportType _type)
 {
     initExportDialog();
 
@@ -180,6 +182,9 @@ void ExportManager::printPreviewScenario(BusinessLogic::ScenarioDocument* _scena
     //
     BusinessLogic::ExportParameters exportParameters = m_exportDialog->exportParameters();
     exportParameters.scriptName = _scenarioData.value(ScenarioData::NAME_KEY);
+    exportParameters.scriptHeader = _scenarioData.value(ScenarioData::HEADER_KEY);
+    exportParameters.scriptFooter = _scenarioData.value(ScenarioData::FOOTER_KEY);
+    exportParameters.scenesPrefix = _scenarioData.value(ScenarioData::SCENE_NUMBERS_PREFIX_KEY);
     exportParameters.scriptAdditionalInfo = _scenarioData.value(ScenarioData::ADDITIONAL_INFO_KEY);
     exportParameters.scriptGenre = _scenarioData.value(ScenarioData::GENRE_KEY);
     exportParameters.scriptAuthor = _scenarioData.value(ScenarioData::AUTHOR_KEY);
@@ -192,9 +197,21 @@ void ExportManager::printPreviewScenario(BusinessLogic::ScenarioDocument* _scena
     // Формируем предварительный просмот
     //
     BusinessLogic::PdfExporter exporter;
-    if (exportParameters.isResearch) {
+    const bool isNeedExportResearch
+            = _type == ExportType::Research
+              || (_type == ExportType::Auto && exportParameters.isResearch);
+    if (isNeedExportResearch) {
         exporter.printPreview(m_researchModelProxy, exportParameters);
     } else {
+        //
+        // Принудительно задаём флаг печати сценария, т.к. он может быть не установлен
+        // если диалог экспорта не был показан, или там стоит другой тип экспортируемого
+        // документа, но мы попали сюда из меню
+        //
+        if (exportParameters.isOutline == false
+            && exportParameters.isScript == false) {
+            exportParameters.isScript = true;
+        }
         exporter.printPreview(_scenario, exportParameters);
     }
 
@@ -234,13 +251,17 @@ void ExportManager::loadCurrentProjectSettings(const QString& _projectPath)
     m_exportDialog->setCheckPageBreaks(
                 StorageFacade::settingsStorage()->value(
                     QString("%1/check-page-breaks").arg(projectKey),
-                    DataStorageLayer::SettingsStorage::ApplicationSettings).toInt()
+                    DataStorageLayer::SettingsStorage::ApplicationSettings, "1").toInt()
                 );
-    m_exportDialog->setCurrentStyle(
-                StorageFacade::settingsStorage()->value(
-                    QString("%1/style").arg(projectKey),
-                    DataStorageLayer::SettingsStorage::ApplicationSettings)
-                );
+    QString exportStyle = StorageFacade::settingsStorage()->value(
+                              QString("%1/style").arg(projectKey),
+                              DataStorageLayer::SettingsStorage::ApplicationSettings);
+    if (exportStyle.isEmpty()) {
+        exportStyle = DataStorageLayer::StorageFacade::settingsStorage()->value(
+                          "scenario-editor/current-style",
+                          DataStorageLayer::SettingsStorage::ApplicationSettings);
+    }
+    m_exportDialog->setCurrentStyle(exportStyle);
     m_exportDialog->setPageNumbering(
                 StorageFacade::settingsStorage()->value(
                     QString("%1/page-numbering").arg(projectKey),
@@ -259,11 +280,6 @@ void ExportManager::loadCurrentProjectSettings(const QString& _projectPath)
                     DataStorageLayer::SettingsStorage::ApplicationSettings,
                     FALSE_VALUE).toInt()
                 );
-    m_exportDialog->setScenesPrefix(
-                StorageFacade::settingsStorage()->value(
-                    QString("%1/scenes-prefix").arg(projectKey),
-                    DataStorageLayer::SettingsStorage::ApplicationSettings)
-                );
     m_exportDialog->setSaveReviewMarks(
                 StorageFacade::settingsStorage()->value(
                     QString("%1/save-review-marks").arg(projectKey),
@@ -275,6 +291,17 @@ void ExportManager::loadCurrentProjectSettings(const QString& _projectPath)
                     QString("%1/print-title").arg(projectKey),
                     DataStorageLayer::SettingsStorage::ApplicationSettings,
                     TRUE_VALUE).toInt()
+                );
+    m_exportDialog->setPrintWatermark(
+                StorageFacade::settingsStorage()->value(
+                    QString("%1/print-watermark").arg(projectKey),
+                    DataStorageLayer::SettingsStorage::ApplicationSettings,
+                    FALSE_VALUE).toInt()
+                );
+    m_exportDialog->setWatermark(
+                StorageFacade::settingsStorage()->value(
+                    QString("%1/watermark").arg(projectKey),
+                    DataStorageLayer::SettingsStorage::ApplicationSettings)
                 );
 }
 
@@ -320,10 +347,6 @@ void ExportManager::saveCurrentProjectSettings(const QString& _projectPath)
                 exportParameters.printDialoguesNumbers ? "1" : "0",
                 DataStorageLayer::SettingsStorage::ApplicationSettings);
     StorageFacade::settingsStorage()->setValue(
-                QString("%1/scenes-prefix").arg(projectKey),
-                exportParameters.scenesPrefix,
-                DataStorageLayer::SettingsStorage::ApplicationSettings);
-    StorageFacade::settingsStorage()->setValue(
                 QString("%1/save-review-marks").arg(projectKey),
                 exportParameters.saveReviewMarks ? "1" : "0",
                 DataStorageLayer::SettingsStorage::ApplicationSettings);
@@ -331,22 +354,20 @@ void ExportManager::saveCurrentProjectSettings(const QString& _projectPath)
                 QString("%1/print-title").arg(projectKey),
                 exportParameters.printTilte ? "1" : "0",
                 DataStorageLayer::SettingsStorage::ApplicationSettings);
+    StorageFacade::settingsStorage()->setValue(
+                QString("%1/print-watermark").arg(projectKey),
+                exportParameters.printWatermark ? "1" : "0",
+                DataStorageLayer::SettingsStorage::ApplicationSettings);
+    StorageFacade::settingsStorage()->setValue(
+                QString("%1/watermark").arg(projectKey),
+                exportParameters.watermark,
+                DataStorageLayer::SettingsStorage::ApplicationSettings);
 }
 
 void ExportManager::aboutExportStyleChanged(const QString& _styleName)
 {
     StorageFacade::settingsStorage()->setValue("export/style", _styleName,
-                                                                 DataStorageLayer::SettingsStorage::ApplicationSettings);
-}
-
-void ExportManager::aboutPrintPreview()
-{
-    //
-    // Скрываем окно настроек, показываем предпросмотр, а потом вновь показываем его
-    //
-    m_exportDialog->hide();
-    printPreviewScenario(m_currentScenario, m_scenarioData);
-    m_exportDialog->show();
+                                               DataStorageLayer::SettingsStorage::ApplicationSettings);
 }
 
 void ExportManager::initView()
@@ -374,7 +395,16 @@ void ExportManager::initConnections()
 {
     connect(m_exportDialog, SIGNAL(currentStyleChanged(QString)),
             this, SLOT(aboutExportStyleChanged(QString)));
-    connect(m_exportDialog, SIGNAL(printPreview()), this, SLOT(aboutPrintPreview()));
+    connect(m_exportDialog, &ExportDialog::printPreviewPressed, this, [this] {
+        //
+        // 1. скрываем диалог настроек
+        // 2. показываем предпросмотр
+        // 3. а потом вновь показываем диалог
+        //
+        m_exportDialog->hide();
+        printPreview(m_currentScenario, m_scenarioData);
+        m_exportDialog->show();
+    });
 }
 
 void ExportManager::initExportDialog()
@@ -384,8 +414,20 @@ void ExportManager::initExportDialog()
     //
     QString exportFileName = StorageFacade::scenarioDataStorage()->name();
     if (exportFileName.isEmpty()) {
-        QFileInfo fileInfo(ProjectsManager::currentProject().path());
-        exportFileName = fileInfo.completeBaseName();
+        const auto& currentProject = ProjectsManager::currentProject();
+        //
+        // Для удаленных проектов используем имя проекта + id проекта
+        //
+        if (currentProject.isRemote()) {
+            exportFileName = QString("%1 [%2]").arg(currentProject.name()).arg(currentProject.id());
+        }
+        //
+        // а для локальных имя файла
+        //
+        else {
+            QFileInfo fileInfo(currentProject.path());
+            exportFileName = fileInfo.completeBaseName();
+        }
     }
     m_exportDialog->setResearchExportFileName(exportFileName);
     m_exportDialog->setScriptExportFileName(exportFileName);

@@ -26,7 +26,7 @@ TemplateDialog::TemplateDialog(QWidget *parent) :
 {
     m_ui->setupUi(this);
 
-    connect(this, &TemplateDialog::showed, [=] { m_ui->blockStyles->setCurrentRow(0); });
+    connect(this, &TemplateDialog::showed, this, [this] { m_ui->blockStyles->setCurrentRow(0); });
 
     initStyleSheet();
 }

@@ -22,6 +22,7 @@ namespace ManagementLayer
     class ScenarioCardsManager;
     class ScenarioNavigatorManager;
     class ScenarioSceneDescriptionManager;
+    class ScriptBookmarksManager;
     class ScriptDictionariesManager;
     class ScenarioTextEditManager;
 
@@ -109,6 +110,28 @@ namespace ManagementLayer
          */
         bool workModeIsDraft() const;
 
+        /**
+         * @brief Установить префикс номеров сцен
+         */
+        void setScriptHeader(const QString& _header);
+
+        /**
+         * @brief Установить префикс номеров сцен
+         */
+        void setScriptFooter(const QString& _footer);
+
+        /**
+         * @brief Установить префикс номеров сцен
+         */
+        void setSceneNumbersPrefix(const QString& _prefix);
+
+        /**
+         * @brief Установить стартовый номер сцен
+         */
+        void setSceneStartNumber(int _startNumber);
+
+        void setScenesNumberingLock(bool _fixed);
+
 #ifdef Q_OS_MAC
         /**
          * @brief Сформировать меню "Правка" для редактора сценария
@@ -116,7 +139,6 @@ namespace ManagementLayer
         void buildScriptEditMenu(QMenu* _menu);
 #endif
 
-    public slots:
         /**
          * @brief Обновить параметры редактора карточек
          */
@@ -166,9 +188,14 @@ namespace ManagementLayer
          * @brief Применить патч к сценарию
          */
         /** @{ */
-        void aboutApplyPatch(const QString& _patch, bool _isDraft);
-        void aboutApplyPatches(const QList<QString>& _patches, bool _isDraft);
+        void aboutApplyPatch(const QString& _patch, bool _isDraft, int _newChangesSize);
+        void aboutApplyPatches(const QList<QString>& _patches, bool _isDraft, QList<QPair<QString, QString>>& _newChangesUuids);
         /** @} */
+
+        /**
+         * @brief Очистить список курсоров пользователей
+         */
+        void clearAdditionalCursors();
 
         /**
          * @brief Получены новые позиции курсоров пользователей
@@ -184,6 +211,11 @@ namespace ManagementLayer
          * @brief Включить/выключить дзен режим
          */
         void setZenMode(bool _isZen);
+
+        /**
+         * @brief Загрузить сценарий из заданного xml
+         */
+        void setScriptXml(const QString& _xml);
 
     signals:
         /**
@@ -211,6 +243,11 @@ namespace ManagementLayer
          * @brief Была активирована ссылка для перехода между модулями программы
          */
         void linkActivated(const QUrl& _url);
+
+        /**
+         * @brief У сценария зафиксировались или расфиксировались номера сцен
+         */
+        void scriptFixedScenesChanged(bool _fixed);
 
     private slots:
         /**
@@ -281,17 +318,17 @@ namespace ManagementLayer
          * @brief Добавить элемент, после заданного
          */
         /** @{ */
-        void aboutAddItemFromCards(const QModelIndex& _afterItemIndex, int _itemType, const QString& _title,
-            const QColor& _color, const QString& _description);
-        void aboutAddItem(const QModelIndex& _afterItemIndex, int _itemType, const QString& _header,
-            const QColor& _color, const QString& _description);
+        void aboutAddItemFromCards(const QModelIndex& _afterItemIndex, int _itemType, const QString& _name,
+            const QString& _header, const QString& _description, const QColor& _color);
+        void aboutAddItem(const QModelIndex& _afterItemIndex, int _itemType, const QString& _name,
+            const QString& _header, const QString& _description, const QColor& _color);
         /** @}*/
 
         /**
          * @brief Изменить заданный элемент
          */
-        void aboutUpdateItemFromCards(const QModelIndex& _itemIndex, int _itemType, const QString& _header,
-            const QString& _colors, const QString& _description);
+        void aboutUpdateItemFromCards(const QModelIndex& _itemIndex, int _itemType, const QString& _name,
+            const QString& _header, const QString& _description, const QString& _colors);
 
         /**
          * @brief Удалить заданный элемент
@@ -304,7 +341,7 @@ namespace ManagementLayer
         /**
          * @brief Установить цвет элемента
          */
-        void aboutSetItemColors(const QModelIndex& _itemIndex, const QString& _colors);
+        void aboutSetItemsColors(const QModelIndexList& _indexes, const QString& _colors);
 
         /**
          * @brief Установить штамп элемента
@@ -325,6 +362,11 @@ namespace ManagementLayer
          * @brief Показать/скрыть заметки к сцене
          */
         void setSceneDescriptionVisible(bool _visible);
+
+        /**
+         * @brief Показать/скрыть закладки сценария
+         */
+        void setScriptBookmarksVisible(bool _visible);
 
         /**
          * @brief Показать/скрыть справочники сценария
@@ -432,6 +474,11 @@ namespace ManagementLayer
         ScenarioSceneDescriptionManager* m_sceneDescriptionManager;
 
         /**
+         * @brief Менеджер закладок сценария
+         */
+        ScriptBookmarksManager* m_scriptBookmarksManager = nullptr;
+
+        /**
          * @brief Управляющий справочниками сценария
          */
         ScriptDictionariesManager* m_scriptDictionariesManager = nullptr;
@@ -445,6 +492,14 @@ namespace ManagementLayer
          * @brief Текущий рабочий режим
          */
         bool m_workModeIsDraft;
+
+        /**
+         * @brief Зафиксированы ли номера сцен
+         */
+        /** @{ */
+        bool m_fixedScenes = false;
+        bool m_fixedScenesDraft = false;
+        /** @} */
 
         /**
          * @brief Курсоры соавторов

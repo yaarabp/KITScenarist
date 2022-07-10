@@ -69,10 +69,12 @@ namespace ManagementLayer
         void applicationSaveBackupsFolderChanged(const QString& _value);
         void applicationCompactModeChanged(bool _enable);
         void applicationTwoPanelModeChanged(bool _value);
+        void applicationHidpiScalingChanged(bool _value);
         void applicationModuleResearchChanged(bool _value);
         void applicationModuleCardsChanged(bool _value);
         void applicationModuleScenarioChanged(bool _value);
         void applicationModuleStatisticsChanged(bool _value);
+        void applicationModuleToolsChanged(bool _value);
 
         void researchDefaultFontChanged(const QString& _family, int _size);
 
@@ -107,6 +109,7 @@ namespace ManagementLayer
         void scenarioEditCurrentTemplateChanged(const QString& _value);
         void scenarioEditAutoJumpToNextBlockChanged(bool _value);
         void scenarioEditShowSuggestionsInEmptyBlocksChanged(bool _value);
+        void scenarioEditAutocompleteNextCharacterForDialogueChanged(bool _value);
         void scenarioEditBlockSettingsChanged(const QString& _block, const QString& _shortcut,
             const QString& _tab, const QString& _enter, const QString& _changeTab,
             const QString& _changeEnter);

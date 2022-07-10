@@ -4,21 +4,13 @@
 #
 #-------------------------------------------------
 
-QT += core core-private gui gui-private sql xml widgets widgets-private printsupport network concurrent multimedia
+QT += core gui gui-private sql xml widgets widgets-private printsupport network concurrent multimedia svg
 !win32-g++: QT += webengine webenginewidgets
 
 TARGET = Scenarist
 TEMPLATE = app
 
-CONFIG += c++11
-
-#
-# Отключаем предупреждения о статических функциях и переменных
-# не используемых в собственных заголовочных файлах
-#
-unix: QMAKE_CXXFLAGS += -Wno-unused-function -Wno-unused-variable
-
-QMAKE_MAC_SDK = macosx10.12
+CONFIG += c++11 warn_on
 
 #
 # Конфигурируем расположение файлов сборки
@@ -49,6 +41,7 @@ LIBS += -L$$DESTDIR/../../libs/hunspell/ -lhunspell
 
 INCLUDEPATH += $$PWD/../libs/hunspell/src
 DEPENDPATH += $$PWD/../libs/hunspell
+PRE_TARGETDEPS += $$PWD/../libs/hunspell
 #
 
 ##
@@ -67,6 +60,7 @@ LIBS += -L$$DESTDIR/../../libs/fileformats/ -lfileformats
 
 INCLUDEPATH += $$PWD/../libs/fileformats
 DEPENDPATH += $$PWD/../libs/fileformats
+PRE_TARGETDEPS += $$PWD/../libs/fileformats
 #
 
 #
@@ -76,16 +70,20 @@ LIBS += -L$$DESTDIR/../../libs/webloader/ -lwebloader
 
 INCLUDEPATH += $$PWD/../libs/webloader/src
 DEPENDPATH += $$PWD/../libs/webloader/src
+PRE_TARGETDEPS += $$PWD/../libs/webloader/src
 #
 
 #
-# В маке собираем библиотеки статически, чтобы было удобней подписывать приложение
+# Подключаем библилотеку QGumboParser
 #
-mac {
-PRE_TARGETDEPS += $$DESTDIR/../../libs/hunspell/libhunspell.a
-PRE_TARGETDEPS += $$DESTDIR/../../libs/fileformats/libfileformats.a
-PRE_TARGETDEPS += $$DESTDIR/../../libs/webloader/libwebloader.a
+LIBS += -L$$DESTDIR/../../libs/qgumboparser/ -lqgumboparser
 
+INCLUDEPATH += $$PWD/../libs/qgumboparser
+DEPENDPATH += $$PWD/../libs/qgumboparser
+PRE_TARGETDEPS += $$PWD/../libs/qgumboparser
+#
+
+unix {
 LIBS += -lz
 }
 #
@@ -166,7 +164,7 @@ SOURCES += \
     scenarist-desktop/UserInterfaceLayer/Scenario/ScenarioTextEdit/ScenarioTextEditWidget.cpp \
     scenarist-core/BusinessLayer/ScenarioDocument/ScenarioTextBlockParsers.cpp \
     scenarist-desktop/UserInterfaceLayer/Settings/SettingsView.cpp \
-    scenarist-desktop/UserInterfaceLayer/ApplicationView.cpp \
+    scenarist-desktop/UserInterfaceLayer/Application/ApplicationView.cpp \
     scenarist-core/3rd_party/Widgets/SimpleTextEditor/SimpleTextEditor.cpp \
     scenarist-core/3rd_party/Widgets/PhotosChooser/PhotosChooser.cpp \
     scenarist-core/3rd_party/Widgets/PhotosChooser/PhotoLabel.cpp \
@@ -175,7 +173,6 @@ SOURCES += \
     scenarist-core/BusinessLayer/ScenarioDocument/ScenarioTextBlockInfo.cpp \
     scenarist-core/3rd_party/Widgets/TabBar/TabBar.cpp \
     scenarist-core/3rd_party/Widgets/SpellCheckTextEdit/SyntaxHighlighter.cpp \
-    scenarist-desktop/UserInterfaceLayer/Scenario/ScenarioItemDialog/ScenarioItemDialog.cpp \
     scenarist-core/3rd_party/Widgets/SearchWidget/SearchWidget.cpp \
     scenarist-desktop/UserInterfaceLayer/Scenario/ScenarioTextEdit/ScenarioFastFormatWidget.cpp \
     scenarist-core/3rd_party/Widgets/PagesTextEdit/PageMetrics.cpp \
@@ -205,7 +202,7 @@ SOURCES += \
     scenarist-desktop/UserInterfaceLayer/Settings/TemplateDialog.cpp \
     scenarist-desktop/ManagementLayer/Settings/SettingsTemplatesManager.cpp \
     scenarist-core/BusinessLayer/ScenarioDocument/ScenarioTemplate.cpp \
-    scenarist-desktop/UserInterfaceLayer/StartUp/LoginDialog.cpp \
+    scenarist-desktop/UserInterfaceLayer/Account/LoginDialog.cpp \
     scenarist-core/ManagementLayer/Project/ProjectsManager.cpp \
     scenarist-core/ManagementLayer/Project/Project.cpp \
     scenarist-core/DataLayer/DataMappingLayer/DatabaseHistoryMapper.cpp \
@@ -230,13 +227,9 @@ SOURCES += \
     scenarist-core/3rd_party/Widgets/QWidgetListView/qtmodelwidget.cpp \
     scenarist-desktop/UserInterfaceLayer/Scenario/ScenarioTextEdit/ScenarioReviewView.cpp \
     scenarist-desktop/UserInterfaceLayer/Scenario/ScenarioTextEdit/ScenarioReviewItemDelegate.cpp \
-    scenarist-core/3rd_party/Widgets/Ctk/ctkCollapsibleButton.cpp \
     scenarist-desktop/UserInterfaceLayer/Statistics/StatisticsView.cpp \
     scenarist-desktop/ManagementLayer/Statistics/StatisticsManager.cpp \
-    scenarist-core/3rd_party/Widgets/Ctk/ctkPopupWidget.cpp \
-    scenarist-core/3rd_party/Widgets/Ctk/ctkBasePopupWidget.cpp \
     scenarist-desktop/UserInterfaceLayer/Statistics/StatisticsSettings.cpp \
-    scenarist-desktop/UserInterfaceLayer/Statistics/ReportButton.cpp \
     scenarist-core/BusinessLayer/Statistics/Reports/LocationReport.cpp \
     scenarist-core/BusinessLayer/Statistics/Reports/SceneReport.cpp \
     scenarist-core/BusinessLayer/Statistics/Reports/CastReport.cpp \
@@ -295,10 +288,9 @@ SOURCES += \
     scenarist-core/3rd_party/Widgets/QtMindMap/src/node.cpp \
     scenarist-core/3rd_party/Widgets/TabBarExpanded/TabBarExpanded.cpp \
     scenarist-core/3rd_party/Widgets/PasswordLineEdit/PasswordLineEdit.cpp \
-    scenarist-desktop/UserInterfaceLayer/StartUp/ChangePasswordDialog.cpp \
-    scenarist-desktop/UserInterfaceLayer/StartUp/RenewSubscriptionDialog.cpp \
+    scenarist-desktop/UserInterfaceLayer/Account/ChangePasswordDialog.cpp \
+    scenarist-desktop/UserInterfaceLayer/Account/RenewSubscriptionDialog.cpp \
     scenarist-desktop/UserInterfaceLayer/Scenario/ScenarioCards/ScenarioCardsView.cpp \
-    scenarist-desktop/UserInterfaceLayer/Scenario/ScenarioItemDialog/ScenarioSchemeItemDialog.cpp \
     scenarist-core/BusinessLayer/Export/FdxExporter.cpp \
     scenarist-core/BusinessLayer/Import/FdxImporter.cpp \
     scenarist-desktop/UserInterfaceLayer/Scenario/ScenarioCards/CardsResizer.cpp \
@@ -307,7 +299,7 @@ SOURCES += \
     scenarist-desktop/UserInterfaceLayer/Project/AddProjectDialog.cpp \
     scenarist-core/BusinessLayer/Import/KitScenaristImporter.cpp \
     scenarist-desktop/UserInterfaceLayer/Project/ShareDialog.cpp \
-    scenarist-desktop/UserInterfaceLayer/StartUp/CrashReportDialog.cpp \
+    scenarist-desktop/UserInterfaceLayer/Application/CrashReportDialog.cpp \
     scenarist-core/3rd_party/Widgets/WAF/Animation/CircleFill/CircleFillAnimator.cpp \
     scenarist-core/3rd_party/Widgets/WAF/Animation/CircleFill/CircleFillDecorator.cpp \
     scenarist-core/3rd_party/Widgets/WAF/Animation/SideSlide/SideSlideAnimator.cpp \
@@ -325,7 +317,7 @@ SOURCES += \
     scenarist-core/3rd_party/Widgets/WAF/Animation/Expand/ExpandAnimator.cpp \
     scenarist-core/3rd_party/Widgets/WAF/Animation/Expand/ExpandDecorator.cpp \
     scenarist-core/ManagementLayer/Synchronization/SynchronizationManager.cpp \
-    scenarist-desktop/UserInterfaceLayer/StartUp/UpdateDialog.cpp \
+    scenarist-desktop/UserInterfaceLayer/Application/UpdateDialog.cpp \
     scenarist-core/3rd_party/Widgets/CardsEdit/ActItem.cpp \
     scenarist-core/3rd_party/Widgets/CardsEdit/CardItem.cpp \
     scenarist-core/3rd_party/Widgets/CardsEdit/CardsScene.cpp \
@@ -350,9 +342,36 @@ SOURCES += \
     scenarist-desktop/UserInterfaceLayer/Scenario/ScenarioTextEdit/ScriptZenModeControls.cpp \
     scenarist-core/BusinessLayer/ScenarioDocument/ScriptTextCorrector.cpp \
     scenarist-desktop/ManagementLayer/Scenario/ScriptDictionariesManager.cpp \
-    scenarist-desktop/UserInterfaceLayer/Scenario/ScriptDictionaries/ScriptDictionaries.cpp
+    scenarist-desktop/UserInterfaceLayer/Scenario/ScriptDictionaries/ScriptDictionaries.cpp \
+    scenarist-desktop/UserInterfaceLayer/Application/MenuView.cpp \
+    scenarist-core/3rd_party/Widgets/ClickableLabel/ClickableLabel.cpp \
+    scenarist-desktop/ManagementLayer/MenuManager.cpp \
+    scenarist-core/3rd_party/Widgets/ClickableLabel/ClickableFrame.cpp \
+    scenarist-core/BusinessLayer/Import/CeltxImporter.cpp \
+    scenarist-desktop/UserInterfaceLayer/Application/AboutDialog.cpp \
+    scenarist-desktop/ManagementLayer/Tools/ToolsManager.cpp \
+    scenarist-desktop/UserInterfaceLayer/Tools/ToolsView.cpp \
+    scenarist-desktop/UserInterfaceLayer/Tools/ToolsSettings.cpp \
+    scenarist-core/BusinessLayer/Tools/RestoreFromBackupTool.cpp \
+    scenarist-core/BusinessLayer/ScenarioDocument/ScriptBookmarksModel.cpp \
+    scenarist-desktop/ManagementLayer/Scenario/ScriptBookmarksManager.cpp \
+    scenarist-desktop/UserInterfaceLayer/Scenario/ScriptBookmarks/ScriptBookmarks.cpp \
+    scenarist-desktop/UserInterfaceLayer/Scenario/ScriptBookmarks/BookmarkDialog.cpp \
+    scenarist-core/Domain/ScriptVersion.cpp \
+    scenarist-core/DataLayer/DataMappingLayer/ScriptVersionMapper.cpp \
+    scenarist-core/DataLayer/DataStorageLayer/ScriptVersionStorage.cpp \
+    scenarist-desktop/UserInterfaceLayer/Project/ProjectVersionDialog.cpp \
+    scenarist-core/BusinessLayer/ScenarioDocument/ScriptTextCursor.cpp \
+    scenarist-core/3rd_party/Widgets/ColoredToolButton/ColorsPane.cpp \
+    scenarist-core/UserInterfaceLayer/ScriptVersions/ScriptVersionWidget.cpp \
+    scenarist-core/UserInterfaceLayer/ScriptVersions/ScriptVersionsList.cpp \
+    scenarist-core/BusinessLayer/Tools/CompareScriptVersionsTool.cpp \
+    scenarist-desktop/UserInterfaceLayer/Scenario/ScenarioItemDialog/ScenarioItemDialog.cpp \
+    scenarist-core/3rd_party/Widgets/CircularProgressBar/CircularProgressBar.cpp \
+    scenarist-desktop/UserInterfaceLayer/Scenario/ScenarioCards/CardsSearchWidget.cpp
 
 HEADERS += \
+    scenarist-core/3rd_party/Helpers/XmlHelper.h \
     scenarist-desktop/ManagementLayer/ApplicationManager.h \
     scenarist-desktop/ManagementLayer/Scenario/ScenarioManager.h \
     scenarist-desktop/ManagementLayer/Scenario/ScenarioTextEditManager.h \
@@ -403,7 +422,7 @@ HEADERS += \
     scenarist-desktop/UserInterfaceLayer/Scenario/ScenarioTextEdit/ScenarioTextEditWidget.h \
     scenarist-core/BusinessLayer/ScenarioDocument/ScenarioTextBlockParsers.h \
     scenarist-desktop/UserInterfaceLayer/Settings/SettingsView.h \
-    scenarist-desktop/UserInterfaceLayer/ApplicationView.h \
+    scenarist-desktop/UserInterfaceLayer/Application/ApplicationView.h \
     scenarist-core/3rd_party/Widgets/SimpleTextEditor/SimpleTextEditor.h \
     scenarist-core/3rd_party/Widgets/PhotosChooser/PhotosChooser.h \
     scenarist-core/3rd_party/Widgets/PhotosChooser/PhotoLabel.h \
@@ -412,7 +431,6 @@ HEADERS += \
     scenarist-core/BusinessLayer/ScenarioDocument/ScenarioTextBlockInfo.h \
     scenarist-core/3rd_party/Widgets/TabBar/TabBar.h \
     scenarist-core/3rd_party/Widgets/SpellCheckTextEdit/SyntaxHighlighter.h \
-    scenarist-desktop/UserInterfaceLayer/Scenario/ScenarioItemDialog/ScenarioItemDialog.h \
     scenarist-core/3rd_party/Widgets/SearchWidget/SearchWidget.h \
     scenarist-desktop/UserInterfaceLayer/Scenario/ScenarioTextEdit/ScenarioFastFormatWidget.h \
     scenarist-core/3rd_party/Widgets/PagesTextEdit/PageMetrics.h \
@@ -445,7 +463,7 @@ HEADERS += \
     scenarist-desktop/UserInterfaceLayer/Settings/TemplateDialog.h \
     scenarist-desktop/ManagementLayer/Settings/SettingsTemplatesManager.h \
     scenarist-core/BusinessLayer/ScenarioDocument/ScenarioTemplate.h \
-    scenarist-desktop/UserInterfaceLayer/StartUp/LoginDialog.h \
+    scenarist-desktop/UserInterfaceLayer/Account/LoginDialog.h \
     scenarist-core/3rd_party/Helpers/PasswordStorage.h \
     scenarist-core/ManagementLayer/Project/ProjectsManager.h \
     scenarist-core/ManagementLayer/Project/Project.h \
@@ -476,17 +494,10 @@ HEADERS += \
     scenarist-desktop/UserInterfaceLayer/Scenario/ScenarioTextEdit/ScenarioReviewView.h \
     scenarist-desktop/UserInterfaceLayer/Scenario/ScenarioTextEdit/ScenarioReviewItemDelegate.h \
     scenarist-core/DataLayer/Database/DatabaseHelper.h \
-    scenarist-core/3rd_party/Widgets/Ctk/ctkCollapsibleButton.h \
     scenarist-desktop/UserInterfaceLayer/Statistics/StatisticsView.h \
     scenarist-desktop/ManagementLayer/Statistics/StatisticsManager.h \
-    scenarist-core/3rd_party/Widgets/Ctk/ctkPopupWidget.h \
-    scenarist-core/3rd_party/Widgets/Ctk/ctkPopupWidget_p.h \
-    scenarist-core/3rd_party/Widgets/Ctk/ctkBasePopupWidget.h \
-    scenarist-core/3rd_party/Widgets/Ctk/ctkBasePopupWidget_p.h \
-    scenarist-core/3rd_party/Widgets/Ctk/ctkPimpl.h \
     scenarist-desktop/UserInterfaceLayer/Statistics/StatisticsSettings.h \
     scenarist-core/BusinessLayer/Statistics/Reports/AbstractReport.h \
-    scenarist-desktop/UserInterfaceLayer/Statistics/ReportButton.h \
     scenarist-core/BusinessLayer/Statistics/Reports/LocationReport.h \
     scenarist-core/BusinessLayer/Statistics/Reports/SceneReport.h \
     scenarist-core/BusinessLayer/Statistics/Reports/CastReport.h \
@@ -552,10 +563,9 @@ HEADERS += \
     scenarist-core/3rd_party/Widgets/QtMindMap/include/node.h \
     scenarist-core/3rd_party/Widgets/TabBarExpanded/TabBarExpanded.h \
     scenarist-core/3rd_party/Widgets/PasswordLineEdit/PasswordLineEdit.h \
-    scenarist-desktop/UserInterfaceLayer/StartUp/ChangePasswordDialog.h \
-    scenarist-desktop/UserInterfaceLayer/StartUp/RenewSubscriptionDialog.h \
+    scenarist-desktop/UserInterfaceLayer/Account/ChangePasswordDialog.h \
+    scenarist-desktop/UserInterfaceLayer/Account/RenewSubscriptionDialog.h \
     scenarist-desktop/UserInterfaceLayer/Scenario/ScenarioCards/ScenarioCardsView.h \
-    scenarist-desktop/UserInterfaceLayer/Scenario/ScenarioItemDialog/ScenarioSchemeItemDialog.h \
     scenarist-core/BusinessLayer/Export/FdxExporter.h \
     scenarist-core/BusinessLayer/Import/FdxImporter.h \
     scenarist-desktop/UserInterfaceLayer/Scenario/ScenarioCards/CardsResizer.h \
@@ -565,7 +575,7 @@ HEADERS += \
     scenarist-core/BusinessLayer/Import/KitScenaristImporter.h \
     scenarist-desktop/UserInterfaceLayer/Project/ShareDialog.h \
     scenarist-core/3rd_party/Helpers/Validators.h \
-    scenarist-desktop/UserInterfaceLayer/StartUp/CrashReportDialog.h \
+    scenarist-desktop/UserInterfaceLayer/Application/CrashReportDialog.h \
     scenarist-core/ManagementLayer/Synchronization/Sync.h \
     scenarist-core/3rd_party/Widgets/WAF/Animation/CircleFill/CircleFillAnimator.h \
     scenarist-core/3rd_party/Widgets/WAF/Animation/CircleFill/CircleFillDecorator.h \
@@ -589,7 +599,7 @@ HEADERS += \
     scenarist-core/3rd_party/Widgets/WAF/AbstractAnimator.h \
     scenarist-core/ManagementLayer/Synchronization/SynchronizationManager.h \
     scenarist-core/3rd_party/Helpers/ColorHelper.h \
-    scenarist-desktop/UserInterfaceLayer/StartUp/UpdateDialog.h \
+    scenarist-desktop/UserInterfaceLayer/Application/UpdateDialog.h \
     scenarist-core/3rd_party/Widgets/CardsEdit/ActItem.h \
     scenarist-core/3rd_party/Widgets/CardsEdit/CardItem.h \
     scenarist-core/3rd_party/Widgets/CardsEdit/CardsScene.h \
@@ -617,7 +627,32 @@ HEADERS += \
     scenarist-core/BusinessLayer/ScenarioDocument/ScriptTextCorrector.h \
     scenarist-core/DataLayer/DataMappingLayer/ScenarioMapper.h \
     scenarist-desktop/ManagementLayer/Scenario/ScriptDictionariesManager.h \
-    scenarist-desktop/UserInterfaceLayer/Scenario/ScriptDictionaries/ScriptDictionaries.h
+    scenarist-desktop/UserInterfaceLayer/Scenario/ScriptDictionaries/ScriptDictionaries.h \
+    scenarist-desktop/UserInterfaceLayer/Application/MenuView.h \
+    scenarist-core/3rd_party/Widgets/ClickableLabel/ClickableLabel.h \
+    scenarist-desktop/ManagementLayer/MenuManager.h \
+    scenarist-core/3rd_party/Widgets/ClickableLabel/ClickableFrame.h \
+    scenarist-core/BusinessLayer/Import/CeltxImporter.h \
+    scenarist-desktop/UserInterfaceLayer/Application/AboutDialog.h \
+    scenarist-desktop/ManagementLayer/Tools/ToolsManager.h \
+    scenarist-desktop/UserInterfaceLayer/Tools/ToolsView.h \
+    scenarist-desktop/UserInterfaceLayer/Tools/ToolsSettings.h \
+    scenarist-core/BusinessLayer/Tools/RestoreFromBackupTool.h \
+    scenarist-core/BusinessLayer/ScenarioDocument/ScriptBookmarksModel.h \
+    scenarist-desktop/ManagementLayer/Scenario/ScriptBookmarksManager.h \
+    scenarist-desktop/UserInterfaceLayer/Scenario/ScriptBookmarks/ScriptBookmarks.h \
+    scenarist-desktop/UserInterfaceLayer/Scenario/ScriptBookmarks/BookmarkDialog.h \
+    scenarist-core/Domain/ScriptVersion.h \
+    scenarist-core/DataLayer/DataMappingLayer/ScriptVersionMapper.h \
+    scenarist-core/DataLayer/DataStorageLayer/ScriptVersionStorage.h \
+    scenarist-desktop/UserInterfaceLayer/Project/ProjectVersionDialog.h \
+    scenarist-core/BusinessLayer/ScenarioDocument/ScriptTextCursor.h \
+    scenarist-core/UserInterfaceLayer/ScriptVersions/ScriptVersionWidget.h \
+    scenarist-core/UserInterfaceLayer/ScriptVersions/ScriptVersionsList.h \
+    scenarist-core/BusinessLayer/Tools/CompareScriptVersionsTool.h \
+    scenarist-desktop/UserInterfaceLayer/Scenario/ScenarioItemDialog/ScenarioItemDialog.h \
+    scenarist-core/3rd_party/Widgets/CircularProgressBar/CircularProgressBar.h \
+    scenarist-desktop/UserInterfaceLayer/Scenario/ScenarioCards/CardsSearchWidget.h
 
 FORMS += \
     scenarist-desktop/UserInterfaceLayer/StartUp/StartUpView.ui \
@@ -625,28 +660,35 @@ FORMS += \
     scenarist-desktop/UserInterfaceLayer/Export/ExportDialog.ui \
     scenarist-desktop/UserInterfaceLayer/Import/ImportDialog.ui \
     scenarist-desktop/UserInterfaceLayer/Settings/TemplateDialog.ui \
-    scenarist-desktop/UserInterfaceLayer/StartUp/LoginDialog.ui \
-    scenarist-desktop/UserInterfaceLayer/Statistics/StatisticsSettings.ui \
+    scenarist-desktop/UserInterfaceLayer/Account/LoginDialog.ui \
     scenarist-desktop/UserInterfaceLayer/Settings/LanguageDialog.ui \
     scenarist-desktop/UserInterfaceLayer/Research/ResearchView.ui \
     scenarist-desktop/UserInterfaceLayer/Research/ResearchItemDialog.ui \
-    scenarist-desktop/UserInterfaceLayer/StartUp/ChangePasswordDialog.ui \
-    scenarist-desktop/UserInterfaceLayer/StartUp/RenewSubscriptionDialog.ui \
-    scenarist-desktop/UserInterfaceLayer/Scenario/ScenarioItemDialog/ScenarioSchemeItemDialog.ui \
+    scenarist-desktop/UserInterfaceLayer/Account/ChangePasswordDialog.ui \
+    scenarist-desktop/UserInterfaceLayer/Account/RenewSubscriptionDialog.ui \
     scenarist-desktop/UserInterfaceLayer/Scenario/ScenarioCards/CardsResizer.ui \
     scenarist-desktop/UserInterfaceLayer/_tools/UIConfigurator.ui \
     scenarist-desktop/UserInterfaceLayer/Project/AddProjectDialog.ui \
     scenarist-desktop/UserInterfaceLayer/Project/ShareDialog.ui \
-    scenarist-desktop/UserInterfaceLayer/StartUp/CrashReportDialog.ui \
-    scenarist-desktop/UserInterfaceLayer/StartUp/UpdateDialog.ui \
+    scenarist-desktop/UserInterfaceLayer/Application/CrashReportDialog.ui \
+    scenarist-desktop/UserInterfaceLayer/Application/UpdateDialog.ui \
     scenarist-desktop/UserInterfaceLayer/Scenario/ScenarioCards/PrintCardsDialog.ui \
     scenarist-core/UserInterfaceLayer/ProjectsList/ProjectFileWidget.ui \
     scenarist-core/UserInterfaceLayer/ProjectsList/ProjectUserWidget.ui \
-    scenarist-desktop/UserInterfaceLayer/Onboarding/OnboardingView.ui
+    scenarist-desktop/UserInterfaceLayer/Onboarding/OnboardingView.ui \
+    scenarist-desktop/UserInterfaceLayer/Application/MenuView.ui \
+    scenarist-desktop/UserInterfaceLayer/Application/AboutDialog.ui \
+    scenarist-desktop/UserInterfaceLayer/Tools/ToolsSettings.ui \
+    scenarist-desktop/UserInterfaceLayer/Scenario/ScriptBookmarks/BookmarkDialog.ui \
+    scenarist-desktop/UserInterfaceLayer/Statistics/StatisticsSettings.ui \
+    scenarist-desktop/UserInterfaceLayer/Project/ProjectVersionDialog.ui \
+    scenarist-core/UserInterfaceLayer/ScriptVersions/ScriptVersionWidget.ui \
+    scenarist-desktop/UserInterfaceLayer/Scenario/ScenarioItemDialog/ScenarioItemDialog.ui
 
 
 RESOURCES += \
-    scenarist-core/Resources/Resources.qrc
+    scenarist-core/Resources/Resources.qrc \
+    scenarist-core/Resources/Translations.qrc
 
 OTHER_FILES += \
     scenarist-desktop/settings_keys \
@@ -664,3 +706,19 @@ macx {
 # Включаем поддержку компиляции под Windows XP для MSVC 2012+
 #
 win32-msvc*:QMAKE_LFLAGS_WINDOWS = /SUBSYSTEM:WINDOWS,5.01
+
+#
+# Настраиваем вывод в консоль в Windows в нормальной кодировке
+#
+win32 {
+    QMAKE_EXTRA_TARGETS += before_build makefilehook
+
+    makefilehook.target = $(MAKEFILE)
+    makefilehook.depends = .beforebuild
+
+    PRE_TARGETDEPS += .beforebuild
+
+    before_build.target = .beforebuild
+    before_build.depends = FORCE
+    before_build.commands = chcp 1251
+}

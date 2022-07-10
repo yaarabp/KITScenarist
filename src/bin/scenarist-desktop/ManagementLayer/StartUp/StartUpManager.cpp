@@ -20,11 +20,8 @@
 #include <ManagementLayer/Project/ProjectsManager.h>
 
 #include <UserInterfaceLayer/StartUp/StartUpView.h>
-#include <UserInterfaceLayer/StartUp/LoginDialog.h>
-#include <UserInterfaceLayer/StartUp/ChangePasswordDialog.h>
-#include <UserInterfaceLayer/StartUp/RenewSubscriptionDialog.h>
-#include <UserInterfaceLayer/StartUp/CrashReportDialog.h>
-#include <UserInterfaceLayer/StartUp/UpdateDialog.h>
+#include <UserInterfaceLayer/Application/CrashReportDialog.h>
+#include <UserInterfaceLayer/Application/UpdateDialog.h>
 
 #include <DataLayer/DataStorageLayer/StorageFacade.h>
 #include <DataLayer/DataStorageLayer/SettingsStorage.h>
@@ -55,9 +52,6 @@ using ManagementLayer::ProjectsManager;
 using DataStorageLayer::StorageFacade;
 using DataStorageLayer::SettingsStorage;
 using UserInterface::StartUpView;
-using UserInterface::LoginDialog;
-using UserInterface::ChangePasswordDialog;
-using UserInterface::RenewSubscriptionDialog;
 using UserInterface::CrashReportDialog;
 using UserInterface::UpdateDialog;
 
@@ -68,13 +62,8 @@ namespace {
 
 StartUpManager::StartUpManager(QObject *_parent, QWidget* _parentWidget) :
     QObject(_parent),
-    m_view(new StartUpView(_parentWidget)),
-    m_loginDialog(new LoginDialog(m_view)),
-    m_changePasswordDialog(new ChangePasswordDialog(m_view)),
-    m_renewSubscriptionDialog(new RenewSubscriptionDialog(m_view))
+    m_view(new StartUpView(_parentWidget))
 {
-    initView();
-    initData();
     initConnections();
 }
 
@@ -85,29 +74,26 @@ QWidget* StartUpManager::view() const
 
 void StartUpManager::checkCrashReports()
 {
-    const QString SENDED = "sended";
-    const QString IGNORED = "ignored";
+    const QString sendedSuffix = "sended";
+    const QString ignoredSuffix = "ignored";
 
     //
     // Настроим отлавливание ошибок
     //
     QString appDataFolderPath = QStandardPaths::writableLocation(QStandardPaths::DataLocation);
     QString crashReportsFolderPath = appDataFolderPath + QDir::separator() + "CrashReports";
-    bool hasUnhandledReports = false;
-    QString unhandledReportPath;
+    QVector<QString> unhandledReportsPaths;
     for (const QFileInfo& crashReportFileInfo : QDir(crashReportsFolderPath).entryInfoList(QDir::Files)) {
-        if (crashReportFileInfo.suffix() != SENDED
-            && crashReportFileInfo.suffix() != IGNORED) {
-            hasUnhandledReports = true;
-            unhandledReportPath = crashReportFileInfo.filePath();
-            break;
+        if (crashReportFileInfo.suffix() != sendedSuffix
+            && crashReportFileInfo.suffix() != ignoredSuffix) {
+            unhandledReportsPaths.append(crashReportFileInfo.filePath());
         }
     }
 
     //
     // Если есть необработанные отчёты, показать диалог
     //
-    if (hasUnhandledReports) {
+    if (!unhandledReportsPaths.isEmpty()) {
         CrashReportDialog dialog(m_view);
 
         //
@@ -121,24 +107,21 @@ void StartUpManager::checkCrashReports()
             dialog.setEmail(email);
         }
 
-        QString handledReportPath = unhandledReportPath;
+        bool handled = true;
         if (dialog.exec() == CrashReportDialog::Accepted) {
             dialog.showProgress();
-            //
-            // Отправляем
-            //
-            NetworkRequest loader;
-            loader.setRequestMethod(NetworkRequest::Post);
-            loader.addRequestAttribute("version", QApplication::applicationVersion());
-            loader.addRequestAttribute("email", dialog.email());
-            loader.addRequestAttribute("message", dialog.message());
-            loader.addRequestAttributeFile("report", unhandledReportPath);
-            loader.loadSync("https://kitscenarist.ru/api/app/feedback/");
-
-            //
-            // Помечаем отчёт, как отправленный
-            //
-            handledReportPath += "." + SENDED;
+            for (const auto& reportPath : unhandledReportsPaths) {
+                //
+                // Отправляем
+                //
+                NetworkRequest loader;
+                loader.setRequestMethod(NetworkRequestMethod::Post);
+                loader.addRequestAttribute("version", QApplication::applicationVersion());
+                loader.addRequestAttribute("email", dialog.email());
+                loader.addRequestAttribute("message", dialog.message());
+                loader.addRequestAttributeFile("report", reportPath);
+                loader.loadSync("https://kitscenarist.ru/api/app/feedback/");
+            }
 
             //
             // Сохраняем email, если ранее не было никакого
@@ -149,21 +132,23 @@ void StartUpManager::checkCrashReports()
                             dialog.email(),
                             SettingsStorage::ApplicationSettings);
             }
+        } else {
+            handled = false;
         }
+
         //
-        // Помечаем отчёт, как проигнорированный
+        // Помечаем отчёты, чтобы в слдующий раз на них не обращать внимания
         //
-        else {
-            handledReportPath += "." + IGNORED;
+        for (auto& reportPath : unhandledReportsPaths) {
+            QFile::rename(reportPath, reportPath +  "." + (handled ? sendedSuffix : ignoredSuffix));
         }
-        QFile::rename(unhandledReportPath, handledReportPath);
     }
 }
 
 void StartUpManager::checkNewVersion()
 {
     NetworkRequest loader;
-    loader.setRequestMethod(NetworkRequest::Get);
+    loader.setRequestMethod(NetworkRequestMethod::Post);
 
     //
     // Сформируем uuid для приложения, по которому будем идентифицировать данного пользователя
@@ -216,14 +201,18 @@ void StartUpManager::checkNewVersion()
         //
         // Распарсим ответ. Нам нужна версия, ее описание, шаблон на скачивание и является ли бетой
         //
+        int funded = 0;
         while (!responseReader.atEnd()) {
             responseReader.readNext();
             if (responseReader.name().toString() == "update"
                     && responseReader.tokenType() == QXmlStreamReader::StartElement) {
-                QXmlStreamAttributes attrs = responseReader.attributes();
-                m_updateVersion = attrs.value("version").toString();
-                m_updateFileTemplate = attrs.value("file_template").toString();
-                m_updateIsBeta = attrs.value("is_beta").toString() == "true"; // :)
+                QXmlStreamAttributes attributes = responseReader.attributes();
+                m_updateVersion = attributes.value("version").toString();
+                m_updateFileTemplate = attributes.value("file_template").toString();
+                m_updateIsBeta = attributes.value("is_beta").toString() == "true"; // :)
+                if (attributes.hasAttribute("funded")) {
+                    funded = attributes.value("funded").toInt();
+                }
                 responseReader.readNext();
             } else if (responseReader.name().toString() == "description"
                     && responseReader.tokenType() == QXmlStreamReader::StartElement) {
@@ -240,6 +229,8 @@ void StartUpManager::checkNewVersion()
             }
         }
 
+        m_view->setCrowdfundingVisible(funded > 0, funded);
+
         //
         // Загрузим версию, либо которая установлена, либо которую пропустили
         //
@@ -254,7 +245,7 @@ void StartUpManager::checkNewVersion()
             //
             // Есть новая версия, которая не совпадает с нашей. Покажем диалог
             //
-            showUpdateDialog();
+            showUpdateDialogImpl();
         }
 
 
@@ -263,125 +254,16 @@ void StartUpManager::checkNewVersion()
             // Если оказались здесь, значит либо отменили установку, либо пропустили обновление.
             // Будем показывать пользователю кнопку-ссылку на обновление
             //
-            QString updateInfo = tr("Released version %1. "
-                                    "<a href=\"#\" style=\"color:#2b78da;\">Install</a>").arg(m_updateVersion);
-            m_view->setUpdateInfo(updateInfo);
+            emit updatePublished(m_updateVersion);
         }
-    }
-}
-
-void StartUpManager::setProgressLoginLabel(bool _enable)
-{
-    if (_enable) {
-        m_view->enableProgressLoginLabel(0, true);
     } else {
-        m_view->disableProgressLoginLabel();
+        m_view->setCrowdfundingVisible(true, 0);
     }
-}
-
-bool StartUpManager::isOnLoginDialog() const
-{
-    return m_loginDialog->isVisible() || m_changePasswordDialog->isVisible();
 }
 
 bool StartUpManager::isOnLocalProjectsTab() const
 {
     return m_view->isOnLocalProjectsTab();
-}
-
-void StartUpManager::completeLogin(const QString& _userName, const QString& _userEmail,
-                                   int _paymentMonth)
-{
-    m_view->disableProgressLoginLabel();
-    m_userEmail = _userEmail;
-
-    m_renewSubscriptionDialog->setPaymentMonth(_paymentMonth);
-
-    const bool isLogged = true;
-    m_view->setUserLogged(isLogged, _userName, m_userEmail);
-    m_loginDialog->unblock();
-    m_loginDialog->hide();
-}
-
-void StartUpManager::verifyUser()
-{
-    //
-    // Покажем пользователю окно с вводом проверочного кода
-    //
-    m_loginDialog->showVerificationSuccess();
-}
-
-void StartUpManager::userAfterSignUp()
-{
-    //
-    // После того, как пользователь зарегистрировался, сразу выполним вход
-    //
-    emit loginRequested(m_loginDialog->signUpEmail(), m_loginDialog->signUpPassword());
-}
-
-void StartUpManager::userPassRestored()
-{
-    m_loginDialog->showRestoreSuccess();
-}
-
-void StartUpManager::completeLogout()
-{
-    m_userEmail.clear();
-
-    const bool isLogged = false;
-    m_view->setUserLogged(isLogged);
-}
-
-void StartUpManager::passwordChanged()
-{
-    m_changePasswordDialog->stopAndHide();
-    QLightBoxMessage::information(m_view, QString::null, tr("Password successfully changed"));
-}
-
-void StartUpManager::showPasswordError(const QString& _error)
-{
-    if (m_loginDialog->isVisible()) {
-        //
-        // Если активно окно авторизации, то покажем ошибку там
-        //
-        retrySignUp(_error);
-    } else {
-        //
-        // Иначе, активно окно смены пароля
-        //
-        m_changePasswordDialog->stopAndHide();
-        QLightBoxMessage::critical(m_view, tr("Can not change password"),
-                                   _error);
-        m_changePasswordDialog->showUnprepared();
-    }
-}
-
-void StartUpManager::setSubscriptionInfo(bool _isActive, const QString &_expiredDate, quint64 _usedSpace, quint64 _availableSpace)
-{
-    if (m_renewSubscriptionDialog->isVisible()) {
-        //
-        // Если окно продления подписки показано, значит,
-        // необходимо обновлять, пока не получим изменения
-        //
-        if (_expiredDate != m_subscriptionEndDate) {
-            //
-            // Обновилось, обновим окно и поле в StartUpView
-            //
-            m_renewSubscriptionDialog->showThanks(_expiredDate);
-            m_view->setSubscriptionInfo(_isActive, _expiredDate, _usedSpace, _availableSpace);
-        } else {
-            //
-            // Не обновилось, запросим еще раз
-            //
-            QTimer::singleShot(3000, this, &StartUpManager::getSubscriptionInfoRequested);
-        }
-    } else {
-        //
-        // Иначе, это обычный запрос на обновление
-        //
-        m_subscriptionEndDate = _expiredDate;
-        m_view->setSubscriptionInfo(_isActive, _expiredDate, _usedSpace, _availableSpace);
-    }
 }
 
 void StartUpManager::setRecentProjects(QAbstractItemModel* _model)
@@ -394,6 +276,11 @@ void StartUpManager::setRecentProjectName(int _index, const QString& _name)
     m_view->setRecentProjectName(_index, _name);
 }
 
+void StartUpManager::setRemoteProjectsVisible(bool _visible)
+{
+    m_view->setRemoteProjectsVisible(_visible);
+}
+
 void StartUpManager::setRemoteProjects(QAbstractItemModel* _model)
 {
     m_view->setRemoteProjects(_model);
@@ -404,40 +291,9 @@ void StartUpManager::setRemoteProjectName(int _index, const QString& _name)
     m_view->setRemoteProjectName(_index, _name);
 }
 
-void StartUpManager::retryLogin(const QString& _error)
+void StartUpManager::showUpdateDialog()
 {
-    //
-    // Покажем пользователю ошибку авторизации
-    //
-    m_loginDialog->setLoginError(_error);
-}
-
-void StartUpManager::retrySignUp(const QString &_error)
-{
-    //
-    // Покажем пользователю ошибку регистрации
-    //
-    m_loginDialog->setSignUpError(_error);
-}
-
-void StartUpManager::retryVerify(const QString &_error)
-{
-    //
-    // Покажем пользователю ошибку ввода проверочного кода
-    //
-    m_loginDialog->setVerificationError(_error);
-}
-
-void StartUpManager::retryLastAction(const QString &_error)
-{
-    if (m_loginDialog->isVisible()) {
-        m_loginDialog->setLastActionError(_error);
-    } else if(m_changePasswordDialog->isVisible()) {
-        m_changePasswordDialog->stopAndHide();
-        QLightBoxMessage::critical(m_view, tr("Can not change password"),
-                                   _error);
-        m_changePasswordDialog->showUnprepared();
-    }
+    showUpdateDialogImpl();
 }
 
 #ifdef Q_OS_MAC
@@ -452,70 +308,7 @@ void StartUpManager::buildEditMenu(QMenu* _menu)
 }
 #endif
 
-void StartUpManager::downloadUpdate(const QString &_fileTemplate)
-{
-    NetworkRequest loader;
-
-    connect(&loader, &NetworkRequest::downloadProgress, this, &StartUpManager::downloadProgressForUpdate);
-    connect(this, &StartUpManager::stopDownloadForUpdate, &loader, &NetworkRequest::stop);
-
-    loader.setRequestMethod(NetworkRequest::Get);
-    loader.clearRequestAttributes();
-
-    //
-    // Языковой суффикс
-    //
-    QString localeSuffix;
-    if (QLocale().language() == QLocale::English) {
-        localeSuffix = "_en";
-    } else if (QLocale().language() == QLocale::Spanish) {
-        localeSuffix = "_es";
-    } else if (QLocale().language() == QLocale::French) {
-        localeSuffix = "_fr";
-    }
-
-    //
-    // URL до новой версии в соответствии с ОС, архитектурой и языком
-    //
-#ifdef Q_OS_WIN
-    QString updateUrl = QString("windows/%1.exe").arg(_fileTemplate);
-#elif defined Q_OS_LINUX
-    #ifdef Q_PROCESSOR_X86_32
-        QString arch = "_i386";
-    #else
-        QString arch = "_amd64";
-    #endif
-
-    QString updateUrl = QString("linux/%1%2%3.deb").arg(_fileTemplate, localeSuffix, arch);
-#elif defined Q_OS_MAC
-    QString updateUrl = QString("mac/%1%2.dmg").arg(_fileTemplate, localeSuffix);
-#endif
-
-    //
-    // Загружаем установщик
-    //
-    const QString prefixUrl = "https://kitscenarist.ru/downloads/";
-    QUrl updateInfoUrl(prefixUrl + updateUrl);
-    QByteArray response = loader.loadSync(updateInfoUrl);
-    if (response.isEmpty()) {
-        emit errorDownloadForUpdate();
-        return;
-    }
-
-    //
-    // Сохраняем установщик в файл
-    //
-    const QString tempDirPath = QDir::toNativeSeparators(QDir::tempPath());
-    m_updateFile = tempDirPath + QDir::separator() + updateInfoUrl.fileName();
-    QFile tempFile(m_updateFile);
-    if (tempFile.open(QIODevice::WriteOnly)) {
-        tempFile.write(response);
-        tempFile.close();
-        emit downloadFinishedForUpdate();
-    }
-}
-
-void StartUpManager::showUpdateDialog()
+void StartUpManager::showUpdateDialogImpl()
 {
     UpdateDialog dialog(m_view);
 
@@ -537,14 +330,6 @@ void StartUpManager::showUpdateDialog()
 
 #ifdef Q_OS_LINUX
     isSupported = false;
-    const QString distroName = QSysInfo::prettyProductName().toLower();
-    const QStringList supportedDistros({"ubuntu", "mint"});
-    for (const QString &supportedDistro : supportedDistros) {
-        if (distroName.contains(supportedDistro)) {
-            isSupported = true;
-            break;
-        }
-    }
 #endif
 
     //
@@ -568,14 +353,16 @@ void StartUpManager::showUpdateDialog()
             //
 #ifdef Q_OS_WIN
             if (QProcess::startDetached(m_updateFile)) {
-#elif defined Q_OS_LINUX
-            if (QProcess::startDetached("software-center", { m_updateFile })) {
 #else
-            if (QDesktopServices::openUrl(QUrl::fromLocalFile(m_updateFile))) {
+            if (QFile::exists(m_updateFile) && QDesktopServices::openUrl(QUrl::fromLocalFile(m_updateFile))) {
 #endif
-                exit(0);
+                QApplication::quit();
+                return;
             } else {
-                updateDialogText = tr("Can't install update. There are some problems with downloaded file.\n\nYou can try to reload update.");
+                updateDialogText = tr("<p>Can't install update. There are some problems with downloaded file.</p>"
+                                      "<p>You can try to reload update or load it manually "
+                                      "from <a href=\"%1\" style=\"color:#2b78da;\">official website</a>.</p>")
+                                   .arg(makeUpdateUrl(m_updateFileTemplate));
             }
         } else {
             needToShowUpdate = false;
@@ -588,70 +375,80 @@ void StartUpManager::showUpdateDialog()
     emit stopDownloadForUpdate();
 }
 
-void StartUpManager::initData()
+QString StartUpManager::makeUpdateUrl(const QString& _fileTemplate)
 {
+    //
+    // URL до новой версии в соответствии с ОС, архитектурой и языком
+    //
+#ifdef Q_OS_WIN
+    QString updateUrl = QString("windows/%1.exe").arg(_fileTemplate);
+#elif defined Q_OS_LINUX
+    #ifdef Q_PROCESSOR_X86_32
+        QString arch = "_i386";
+    #else
+        QString arch = "_amd64";
+    #endif
+
+    QString updateUrl = QString("linux/%1%2.deb").arg(_fileTemplate, arch);
+#elif defined Q_OS_MAC
+    QString updateUrl = QString("mac/%1.dmg").arg(_fileTemplate);
+#endif
+
+    //
+    // Полная ссылка
+    //
+    const QString prefixUrl = "https://kitscenarist.ru/downloads/";
+    return prefixUrl + updateUrl;
 }
 
-void StartUpManager::initView()
+void StartUpManager::downloadUpdate(const QString& _fileTemplate)
 {
+    NetworkRequest loader;
+
+    connect(&loader, &NetworkRequest::downloadProgress, this, &StartUpManager::downloadProgressForUpdate);
+    connect(this, &StartUpManager::stopDownloadForUpdate, &loader, &NetworkRequest::stop);
+
+    loader.setRequestMethod(NetworkRequestMethod::Post);
+    loader.clearRequestAttributes();
+
+    //
+    // Загружаем установщик
+    //
+    const QUrl updateInfoUrl(makeUpdateUrl(_fileTemplate));
+    QByteArray response = loader.loadSync(updateInfoUrl);
+    if (response.isEmpty()) {
+        emit errorDownloadForUpdate(updateInfoUrl.toString());
+        return;
+    }
+
+    //
+    // Сохраняем установщик в файл
+    //
+    const QString tempDirPath = QDir::toNativeSeparators(QStandardPaths::writableLocation(QStandardPaths::TempLocation));
+    m_updateFile = tempDirPath + QDir::separator() + updateInfoUrl.fileName();
+    QFile tempFile(m_updateFile);
+    if (tempFile.open(QIODevice::WriteOnly)) {
+        tempFile.write(response);
+        tempFile.close();
+        emit downloadFinishedForUpdate();
+    }
 }
 
 void StartUpManager::initConnections()
 {
-    //
-    // Показать пользователю диалог авторизации/регистрации
-    // Предварительно его очистив
-    //
-    connect(m_view, &StartUpView::loginClicked, [this] {
-        m_loginDialog->showPrepared();
-    });
-
-    connect(m_view, &StartUpView::logoutClicked, this, &StartUpManager::logoutRequested);
     connect(m_view, &StartUpView::createProjectClicked, this, &StartUpManager::createProjectRequested);
     connect(m_view, &StartUpView::openProjectClicked, this, &StartUpManager::openProjectRequested);
     connect(m_view, &StartUpView::helpClicked, this, &StartUpManager::helpRequested);
-    connect(m_view, &StartUpView::updateRequested, this, &StartUpManager::showUpdateDialog);
+    connect(m_view, &StartUpView::crowdfundingJoinClicked, this, &StartUpManager::crowdfindingJoinRequested);
+    connect(m_view, &StartUpView::updateRequested, this, &StartUpManager::showUpdateDialogImpl);
 
     connect(m_view, &StartUpView::openRecentProjectClicked, this, &StartUpManager::openRecentProjectRequested);
     connect(m_view, &StartUpView::hideRecentProjectRequested, this, &StartUpManager::hideRecentProjectRequested);
+    connect(m_view, &StartUpView::moveToCloudRecentProjectRequested, this, &StartUpManager::moveToCloudRecentProjectRequested);
     connect(m_view, &StartUpView::openRemoteProjectClicked, this, &StartUpManager::openRemoteProjectRequested);
     connect(m_view, &StartUpView::editRemoteProjectRequested, this, &StartUpManager::editRemoteProjectRequested);
     connect(m_view, &StartUpView::removeRemoteProjectRequested, this, &StartUpManager::removeRemoteProjectRequested);
     connect(m_view, &StartUpView::shareRemoteProjectRequested, this, &StartUpManager::shareRemoteProjectRequested);
     connect(m_view, &StartUpView::unshareRemoteProjectRequested, this, &StartUpManager::unshareRemoteProjectRequested);
     connect(m_view, &StartUpView::refreshProjects, this, &StartUpManager::refreshProjectsRequested);
-
-    connect(m_loginDialog, &LoginDialog::loginRequested, [this] {
-        emit loginRequested(m_loginDialog->loginEmail(),
-                            m_loginDialog->loginPassword());}
-    );
-    connect(m_loginDialog, &LoginDialog::signUpRequested, [this] {
-        emit signUpRequested(m_loginDialog->signUpEmail(),
-                             m_loginDialog->signUpPassword());
-    });
-    connect(m_loginDialog, &LoginDialog::verifyRequested, [this] {
-        emit verifyRequested(m_loginDialog->verificationCode());
-    });
-    connect(m_loginDialog, &LoginDialog::restoreRequested, [this] {
-        emit restoreRequested(m_loginDialog->loginEmail());
-    });
-    connect(m_view, &StartUpView::userNameChanged,
-            this, &StartUpManager::userNameChangeRequested);
-    connect(m_view, &StartUpView::getSubscriptionInfoClicked,
-            this, &StartUpManager::getSubscriptionInfoRequested);
-    connect(m_view, &StartUpView::renewSubscriptionClicked,
-            m_renewSubscriptionDialog, &RenewSubscriptionDialog::showPrepared);
-    connect(m_view, &StartUpView::passwordChangeClicked, [this] {
-        m_changePasswordDialog->showPrepared();
-    });
-
-    connect(m_changePasswordDialog, &ChangePasswordDialog::changeRequested, [this] {
-        emit passwordChangeRequested(m_changePasswordDialog->password(),
-                                     m_changePasswordDialog->newPassword());
-    });
-
-    connect(m_renewSubscriptionDialog, &RenewSubscriptionDialog::renewSubsciptionRequested, [this] {
-        emit renewSubscriptionRequested(m_renewSubscriptionDialog->duration(), m_renewSubscriptionDialog->paymentSystemType());
-        QTimer::singleShot(3000, this, &StartUpManager::getSubscriptionInfoRequested);
-    });
 }

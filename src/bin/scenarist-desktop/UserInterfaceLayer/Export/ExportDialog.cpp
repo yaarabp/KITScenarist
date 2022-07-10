@@ -10,6 +10,7 @@
 #include <3rd_party/Helpers/FileHelper.h>
 #include <3rd_party/Styles/TreeViewProxyStyle/TreeViewProxyStyle.h>
 
+#include <QButtonGroup>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QStandardPaths>
@@ -83,18 +84,23 @@ void ExportDialog::setResearchModel(QAbstractItemModel* _model)
 
 void ExportDialog::setScriptExportFilePath(const QString& _filePath)
 {
-    m_ui->file->setText(_filePath);
-    QFileInfo fileInfo(_filePath);
-    if (fileInfo.suffix() == "docx") {
-        m_ui->docx->setChecked(true);
-    } else if (fileInfo.suffix() == "pdf") {
-        m_ui->pdf->setChecked(true);
-    } else if (fileInfo.suffix() == "fdx") {
-        m_ui->fdx->setChecked(true);
+    if (!_filePath.isEmpty()) {
+        m_ui->file->setText(_filePath);
+        QFileInfo fileInfo(_filePath);
+        if (fileInfo.suffix() == "docx") {
+            m_ui->docx->setChecked(true);
+        } else if (fileInfo.suffix() == "pdf") {
+            m_ui->pdf->setChecked(true);
+        } else if (fileInfo.suffix() == "fdx") {
+            m_ui->fdx->setChecked(true);
+        } else {
+            m_ui->fountain->setChecked(true);
+        }
     } else {
-        m_ui->fountain->setChecked(true);
+        m_ui->pdf->setChecked(true);
     }
 
+    m_ui->file->setText(_filePath);
     checkScriptExportAvailability();
 }
 
@@ -124,7 +130,24 @@ void ExportDialog::setStylesModel(QAbstractItemModel* _model)
 
 void ExportDialog::setCurrentStyle(const QString& _styleName)
 {
-    m_ui->templates->setCurrentText(_styleName);
+    //
+    // Сбрасываем последний установленный шаблон
+    //
+    m_ui->templates->setCurrentIndex(-1);
+
+    //
+    // Если название шаблона задано, то установим его
+    //
+    if (!_styleName.isEmpty()) {
+        m_ui->templates->setCurrentText(_styleName);
+        emit currentStyleChanged(_styleName);
+    }
+    //
+    // В противном случае выбираем первый из списка
+    //
+    else {
+        m_ui->templates->setCurrentIndex(0);
+    }
 }
 
 void ExportDialog::setPageNumbering(bool _isChecked)
@@ -142,11 +165,6 @@ void ExportDialog::setDialoguesNumbering(bool _isChecked)
     m_ui->dialoguesNumbering->setChecked(_isChecked);
 }
 
-void ExportDialog::setScenesPrefix(const QString& _prefix)
-{
-    m_ui->scenesPrefix->setText(_prefix);
-}
-
 void ExportDialog::setSaveReviewMarks(bool _save)
 {
     m_ui->saveReviewMarks->setChecked(_save);
@@ -157,12 +175,22 @@ void ExportDialog::setPrintTitle(bool _isChecked)
     m_ui->printTitle->setChecked(_isChecked);
 }
 
+void ExportDialog::setPrintWatermark(bool _isChecked)
+{
+    m_ui->printWatermark->setChecked(_isChecked);
+}
+
+void ExportDialog::setWatermark(const QString& _watermark)
+{
+    m_ui->watermark->setText(_watermark);
+}
+
 BusinessLogic::ExportParameters ExportDialog::exportParameters() const
 {
     BusinessLogic::ExportParameters exportParameters;
-    exportParameters.isResearch = m_ui->exportTypes->currentIndex() == RESEARCH_TAB_INDEX;
-    exportParameters.isOutline = m_ui->exportTypes->currentIndex() == OUTLINE_TAB_INDEX;
-    exportParameters.isScript = m_ui->exportTypes->currentIndex() == SCRIPT_TAB_INDEX;
+    exportParameters.isResearch = m_exportType == RESEARCH_TAB_INDEX;
+    exportParameters.isOutline = m_exportType == OUTLINE_TAB_INDEX;
+    exportParameters.isScript = m_exportType == SCRIPT_TAB_INDEX;
     if (exportParameters.isResearch) {
         exportParameters.filePath = m_ui->researchFile->text();
     } else {
@@ -174,15 +202,16 @@ BusinessLogic::ExportParameters ExportDialog::exportParameters() const
     exportParameters.printPagesNumbers = m_ui->pageNumbering->isChecked();
     exportParameters.printScenesNumbers = m_ui->scenesNumbering->isChecked();
     exportParameters.printDialoguesNumbers = m_ui->dialoguesNumbering->isChecked();
-    exportParameters.scenesPrefix = m_ui->scenesPrefix->text();
     exportParameters.saveReviewMarks = m_ui->saveReviewMarks->isChecked();
+    exportParameters.printWatermark = m_ui->printWatermark->isChecked();
+    exportParameters.watermark = m_ui->watermark->text();
 
     return exportParameters;
 }
 
 int ExportDialog::exportType() const
 {
-    return m_ui->exportTypes->currentIndex();
+    return m_exportType;
 }
 
 QString ExportDialog::researchFilePath() const
@@ -198,7 +227,7 @@ QString ExportDialog::scriptFilePath() const
 QString ExportDialog::exportFormat() const
 {
     QString format;
-    if (m_ui->exportTypes->currentIndex() == RESEARCH_TAB_INDEX) {
+    if (m_exportType == RESEARCH_TAB_INDEX) {
         format = "pdf";
     } else {
         if (m_ui->docx->isChecked()) {
@@ -331,11 +360,14 @@ void ExportDialog::checkExportAvailability(int _index)
         fileExists = m_ui->existsLabel;
     }
 
-    int lastCursorPosition = filePath->cursorPosition();
+    const int lastCursorPosition = filePath->cursorPosition();
     filePath->setText(FileHelper::systemSavebleFileName(filePath->text()));
     filePath->setCursorPosition(lastCursorPosition);
-    fileExists->setVisible(QFile::exists(filePath->text()));
 
+    const bool isFileExists = QFile::exists(filePath->text());
+    fileExists->setVisible(isFileExists);
+
+    m_ui->exportTo->setText(isFileExists ? tr("Rewrite") : tr("Export"));
     m_ui->exportTo->setEnabled(!filePath->text().isEmpty());
 }
 
@@ -346,10 +378,11 @@ void ExportDialog::updateParametersVisibility()
     bool showDialoguesNumbers = true;
     bool showSaveReviewMarks = true;
     bool showCheckPageBreak = true;
+    bool showPrintWatermark = m_ui->pdf->isChecked();
     //
     // Зависимость от вида
     //
-    if (m_ui->exportTypes->currentIndex() == OUTLINE_TAB_INDEX) {
+    if (m_exportType == OUTLINE_TAB_INDEX) {
         showDialoguesNumbers = false;
     }
     //
@@ -372,6 +405,8 @@ void ExportDialog::updateParametersVisibility()
     m_ui->dialoguesNumbering->setVisible(showDialoguesNumbers);
     m_ui->saveReviewMarks->setVisible(showSaveReviewMarks);
     m_ui->checkPageBreaks->setVisible(showCheckPageBreak);
+    m_ui->printWatermark->setVisible(showPrintWatermark);
+    m_ui->watermark->setVisible(showPrintWatermark);
 }
 
 void ExportDialog::initView()
@@ -407,12 +442,13 @@ void ExportDialog::initConnections()
     // Покажем страницу параметров экспорта в зависимости от выбранной вкладки
     //
     connect(m_ui->exportTypes, &TabBarExpanded::currentChanged, [this] (int _index) {
-        if (_index == RESEARCH_TAB_INDEX) {
+        m_exportType = _index;
+        if (m_exportType == RESEARCH_TAB_INDEX) {
             m_ui->exportParameters->setCurrentWidget(m_ui->researchExportPage);
         } else {
             m_ui->exportParameters->setCurrentWidget(m_ui->scriptExportPage);
         }
-        checkExportAvailability(_index);
+        checkExportAvailability(m_exportType);
         updateParametersVisibility();
     });
 
@@ -425,8 +461,10 @@ void ExportDialog::initConnections()
     connect(m_ui->browseFile, &FlatButton::clicked, this, &ExportDialog::chooseScriptFile);
     connect(m_ui->file, &QLineEdit::textChanged, this, &ExportDialog::checkScriptExportAvailability);
 
+    connect(m_ui->printWatermark, &QCheckBox::toggled, m_ui->watermark, &QLineEdit::setEnabled);
+
     connect(m_ui->cancel, &FlatButton::clicked, this, &ExportDialog::reject);
-    connect(m_ui->printPreview, &FlatButton::clicked, this, &ExportDialog::printPreview);
+    connect(m_ui->printPreview, &FlatButton::clicked, this, &ExportDialog::printPreviewPressed);
     connect(m_ui->exportTo, &FlatButton::clicked, this, &ExportDialog::accept);
 }
 

@@ -18,6 +18,7 @@ namespace Domain {
 namespace BusinessLogic {
     class ResearchModel;
     class ResearchModelItem;
+    class ScenarioDocument;
 }
 
 
@@ -89,6 +90,31 @@ namespace ManagementLayer
         QString scenarioName() const;
 
         /**
+         * @brief Получить верхний колонтитул
+         */
+        QString scriptHeader() const;
+
+        /**
+         * @brief Получить нижний колонтитул
+         */
+        QString scriptFooter() const;
+
+        /**
+         * @brief Получить префикс номеров сцен
+         */
+        QString sceneNumbersPrefix() const;
+
+        /**
+         * @brief Получить стартовый номер сцен
+         */
+        int sceneStartNumber() const;
+
+        /**
+         * @brief Изменилась блокировка сцен сценария
+         */
+        void setScenesNumberingFixed(bool _fixed);
+
+        /**
          * @brief Получить данные о сценарии
          */
         QMap<QString, QString> scenarioData() const;
@@ -97,7 +123,37 @@ namespace ManagementLayer
         /**
          * @brief Было изменено название проекта
          */
-        void scenarioNameChanged(const QString& _name);
+        void scriptNameChanged(const QString& _name);
+
+        /**
+         * @brief Был изменён верхний колонтитул
+         */
+        void scriptHeaderChanged(const QString& _header);
+
+        /**
+         * @brief Был изменён нижний колонтитул
+         */
+        void scriptFooterChanged(const QString& _footer);
+
+        /**
+         * @brief Был изменён префикс номеров сцен
+         */
+        void sceneNumbersPrefixChanged(const QString& _prefix);
+
+        /**
+         * @brief Был изменен стартовый номер сцен
+         */
+        void sceneStartNumberChanged(int _startNumber);
+
+        /**
+         * @brief Пользователь хочет изменить блокировку сцен
+         */
+        void scenesNumberingLockChanged(bool _fixed);
+
+        /**
+         * @brief Изменился список версий проекта
+         */
+        void versionsChanged();
 
         /**
          * @brief Была изменена разработка
@@ -123,6 +179,11 @@ namespace ManagementLayer
          * @brief Обновить список локаций
          */
         void refreshLocations();
+
+        /**
+         * @brief Запрос на добавление версии сценария
+         */
+        void addScriptVersionRequested();
 
     private:
         /**
@@ -195,6 +256,11 @@ namespace ManagementLayer
          */
         BusinessLogic::ResearchModelItem* m_currentResearchItem;
         Domain::Research* m_currentResearch;
+
+        /**
+         * @brief Документ сценария для отображения версий
+         */
+        BusinessLogic::ScenarioDocument* m_script = nullptr;
     };
 }
 

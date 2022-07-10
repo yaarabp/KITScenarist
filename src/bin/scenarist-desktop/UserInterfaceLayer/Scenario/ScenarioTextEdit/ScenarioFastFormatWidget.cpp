@@ -31,6 +31,7 @@ namespace {
         QPushButton* styleButton = new QPushButton(_parent);
         styleButton->setCheckable(true);
         styleButton->setProperty("leftAlignedText", true);
+        styleButton->setFocusPolicy(Qt::NoFocus);
 
         _parent->connect(styleButton, SIGNAL(clicked()), _parent, SLOT(aboutChangeStyle()));
         if (_key != Qt::Key_unknown) {
@@ -55,6 +56,7 @@ ScenarioFastFormatWidget::ScenarioFastFormatWidget(QWidget *parent) :
     QPushButton* goToPrevBlock = new QPushButton(this);
     goToPrevBlock->setCheckable(false);
     goToPrevBlock->setText(tr("↑ Prev"));
+    goToPrevBlock->setProperty("leftAlignedText", true);
     connect(goToPrevBlock, SIGNAL(clicked()), this, SLOT(aboutGoToPrevBlock()));
     QShortcut* goToPrevShortcut = new QShortcut(Qt::Key_Up, this);
     connect(goToPrevShortcut, SIGNAL(activated()), goToPrevBlock, SLOT(click()));
@@ -75,6 +77,7 @@ ScenarioFastFormatWidget::ScenarioFastFormatWidget(QWidget *parent) :
     QPushButton* goToNextBlock = new QPushButton(this);
     goToNextBlock->setCheckable(false);
     goToNextBlock->setText(tr("↓ Next"));
+    goToNextBlock->setProperty("leftAlignedText", true);
     connect(goToNextBlock, SIGNAL(clicked()), this, SLOT(aboutGoToNextBlock()));
     QShortcut* goToNextShortcut = new QShortcut(Qt::Key_Down, this);
     connect(goToNextShortcut, SIGNAL(activated()), goToNextBlock, SLOT(click()));

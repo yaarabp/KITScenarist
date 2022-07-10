@@ -3,6 +3,7 @@
 
 #include <QWidget>
 
+class CardsSearchWidget;
 class CardsView;
 class FlatButton;
 class QLabel;
@@ -69,14 +70,14 @@ namespace UserInterface {
         /**
          * @brief Вставить карточку после заданной
          */
-        void insertCard(const QString& _uuid, bool _isFolder, int _number, const QString& _title,
+        void insertCard(const QString& _uuid, bool _isFolder, const QString& _number, const QString& _title,
             const QString& _description, const QString& _stamp, const QString& _colors,
             bool _isEmbedded, const QString& _previousCardUuid);
 
         /**
          * @brief Обновить карточку с заданным uuid
          */
-        void updateCard(const QString& _uuid, bool _isFolder, int _number, const QString& _title,
+        void updateCard(const QString& _uuid, bool _isFolder, const QString& _number, const QString& _title,
             const QString& _description, const QString& _stamp, const QString& _colors,
             bool _isEmbedded, bool _isAct);
 
@@ -135,11 +136,9 @@ namespace UserInterface {
         void addCopyCardRequest(bool _isFolder, const QString& _title, const QString& _description, const QString& _stamp, const QString& _colors);
 
         /**
-         * @brief Запросы на изменение выделенной фигуры
+         * @brief Запрос на изменение выделенной карточки
          */
-        /** @{ */
         void editCardRequest(const QString& _uuid);
-        /** @} */
 
         /**
          * @brief Нажата кнопка удаления карточки
@@ -191,6 +190,11 @@ namespace UserInterface {
          * @brief Упорядочить карточки по сетке
          */
         void resortCards();
+
+        /**
+         * @brief Показать/скрыть панель поиска
+         */
+        void setSearchPanelVisible(bool _visible);
 
     private:
         /**
@@ -245,6 +249,11 @@ namespace UserInterface {
         CardsResizer* m_resizer = nullptr;
 
         /**
+         * @brief Кнопка поиска карточек
+         */
+        FlatButton* m_search = nullptr;
+
+        /**
          * @brief Кнопка сохранения изображения
          */
         FlatButton* m_save = nullptr;
@@ -263,6 +272,11 @@ namespace UserInterface {
          * @brief Метка, для закрашивания пространства в панели инструментов
          */
         QLabel* m_toolbarSpacer = nullptr;
+
+        /**
+         * @brief Панель поиска
+         */
+        CardsSearchWidget* m_searchLine = nullptr;
 
         /**
          * @brief Позиция вставки новой карточки

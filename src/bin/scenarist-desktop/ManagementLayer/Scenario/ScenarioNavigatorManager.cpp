@@ -108,9 +108,19 @@ void ScenarioNavigatorManager::setSceneDescriptionVisible(bool _visible)
     m_navigator->setSceneDescriptionVisible(_visible);
 }
 
+void ScenarioNavigatorManager::setScriptBookmarksVisible(bool _visible)
+{
+    m_navigator->setScriptBookmarksVisible(_visible);
+}
+
 void ScenarioNavigatorManager::setScriptDictionariesVisible(bool _visible)
 {
     m_navigator->setScriptDictionariesVisible(_visible);
+}
+
+void ScenarioNavigatorManager::setSceneNumbersPrefix(const QString& _prefix)
+{
+    m_navigator->setSceneNumbersPrefix(_prefix);
 }
 
 void ScenarioNavigatorManager::setCommentOnly(bool _isCommentOnly)
@@ -120,23 +130,19 @@ void ScenarioNavigatorManager::setCommentOnly(bool _isCommentOnly)
 
 void ScenarioNavigatorManager::aboutAddItem(const QModelIndex& _index)
 {
-    m_addItemDialog->clear();
+    m_addItemDialog->prepareForAdding();
 
     //
     // Если пользователь действительно хочет добавить элемент
     //
     if (m_addItemDialog->exec() == QLightBoxDialog::Accepted) {
         const int itemType = m_addItemDialog->itemType();
-        const QString header = m_addItemDialog->header();
-        const QColor color = m_addItemDialog->color();
-        const QString description = m_addItemDialog->description();
+        const QString name = m_addItemDialog->itemName();
+        const QString header = m_addItemDialog->itemHeader();
+        const QString description = m_addItemDialog->itemDescription();
+        const QColor color = m_addItemDialog->itemColor();
 
-        //
-        // Если задан заголовок
-        //
-        if (!header.isEmpty()) {
-            emit addItem(m_scenarioModelProxy->mapToSource(_index), itemType, header, color, description);
-        }
+        emit addItem(m_scenarioModelProxy->mapToSource(_index), itemType, name, header, description, color);
     }
 }
 
@@ -149,9 +155,13 @@ void ScenarioNavigatorManager::aboutRemoveItems(const QModelIndexList& _indexes)
     emit removeItems(removeIndexes);
 }
 
-void ScenarioNavigatorManager::aboutSetItemColors(const QModelIndex& _index, const QString& _colors)
+void ScenarioNavigatorManager::aboutSetItemColors(const QModelIndexList& _indexes, const QString& _colors)
 {
-    emit setItemColors(m_scenarioModelProxy->mapToSource(_index), _colors);
+    QModelIndexList mappedIndexes;
+    for (auto index : _indexes) {
+        mappedIndexes.append(m_scenarioModelProxy->mapToSource(index));
+    }
+    emit setItemsColors(mappedIndexes, _colors);
 }
 
 void ScenarioNavigatorManager::aboutChangeItemType(const QModelIndex& _index, int _type)
@@ -185,10 +195,11 @@ void ScenarioNavigatorManager::initConnections()
 
     connect(m_navigator, &ScenarioNavigator::addItem, this, &ScenarioNavigatorManager::aboutAddItem);
     connect(m_navigator, &ScenarioNavigator::removeItems, this, &ScenarioNavigatorManager::aboutRemoveItems);
-    connect(m_navigator, &ScenarioNavigator::setItemColors, this, &ScenarioNavigatorManager::aboutSetItemColors);
+    connect(m_navigator, &ScenarioNavigator::setItemsColors, this, &ScenarioNavigatorManager::aboutSetItemColors);
     connect(m_navigator, &ScenarioNavigator::changeItemTypeRequested, this, &ScenarioNavigatorManager::aboutChangeItemType);
     connect(m_navigator, &ScenarioNavigator::draftVisibleChanged, this, &ScenarioNavigatorManager::draftVisibleChanged);
     connect(m_navigator, &ScenarioNavigator::sceneDescriptionVisibleChanged, this, &ScenarioNavigatorManager::sceneDescriptionVisibleChanged);
+    connect(m_navigator, &ScenarioNavigator::scriptBookmarksVisibleChanged, this, &ScenarioNavigatorManager::scriptBookmarksVisibleChanged);
     connect(m_navigator, &ScenarioNavigator::scriptDictionariesVisibleChanged, this, &ScenarioNavigatorManager::scriptDictionariesVisibleChanged);
     connect(m_navigator, &ScenarioNavigator::sceneChoosed, this, &ScenarioNavigatorManager::aboutSceneChoosed);
     connect(m_navigator, &ScenarioNavigator::undoRequest, this, &ScenarioNavigatorManager::undoRequest);

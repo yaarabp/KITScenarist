@@ -6,7 +6,10 @@
 
 class FlatButton;
 class QCheckBox;
+class QGraphicsOpacityEffect;
+class QPropertyAnimation;
 class QPushButton;
+class QLabel;
 
 
 namespace UserInterface
@@ -49,6 +52,21 @@ namespace UserInterface
          */
         void activate(bool _active);
 
+        /**
+         * @brief Установить хронометраж
+         */
+        void setDuration(const QString& _duration);
+
+        /**
+         * @brief Установить счетчики
+         */
+        void setCountersInfo(const QStringList& _counters);
+
+        /**
+         * @brief Установить режим работы со сценарием
+         */
+        void setReadOnly(bool _readOnly);
+
     signals:
         /**
          * @brief Нажата кнопка выхода из дзен режима
@@ -63,9 +81,30 @@ namespace UserInterface
 
     private:
         /**
+         * @brief Плавно показать
+         */
+        void showAnimated();
+
+        /**
+         * @brief Плавно скрыть
+         */
+        void hideAnimated();
+
+        /**
+         * @brief Настроить анимацию прозрачности виджета
+         */
+        QPropertyAnimation* configureOpacityAnimation(qreal _startOpacity, qreal _endOpacity);
+
+    private:
+        /**
          * @brief Активен ли элемент управления в данный момент
          */
         bool m_active = false;
+
+        /**
+         * @brief Доступно ли редактирование
+         */
+        bool m_readOnly = false;
 
         /**
          * @brief Редактор сценария для форматирования блоков
@@ -81,6 +120,16 @@ namespace UserInterface
          * @brief Список кнопок
          */
         QList<QPushButton*> m_buttons;
+
+        /**
+         * @brief Хронометраж
+         */
+        QLabel* m_duration = nullptr;
+
+        /**
+         * @brief Счетчики
+         */
+        QLabel* m_countersInfo = nullptr;
 
         /**
          * @brief Переключатель воспроизведения звука клавиатуры

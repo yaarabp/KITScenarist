@@ -43,7 +43,7 @@ namespace ManagementLayer
         /**
          * @brief Установить значения счётчиков
          */
-        void setCountersInfo(const QString& _counters);
+        void setCountersInfo(const QStringList& _counters);
 
         /**
          * @brief Установить позицию курсора
@@ -80,6 +80,21 @@ namespace ManagementLayer
          */
         void scrollToPosition(int _position);
 
+        /**
+         * @brief Установить верхний колонтитул
+         */
+        void setScriptHeader(const QString& _header);
+
+        /**
+         * @brief Установить нижний колонтитул
+         */
+        void setScriptFooter(const QString& _footer);
+
+        /**
+         * @brief Установить префикс номеров сцен
+         */
+        void setSceneNumbersPrefix(const QString& _prefix);
+
 #ifdef Q_OS_MAC
         /**
          * @brief Сформировать меню "Правка"
@@ -91,18 +106,14 @@ namespace ManagementLayer
         /**
          * @brief Добавить элемент сценария в указанной позиции
          */
-        /** @{ */
-        void addScenarioItemFromCards(int _position, int _type, const QString& _title,
-            const QColor& _color, const QString& _description);
-        void addScenarioItem(int _position, int _type, const QString& _header,
-            const QColor& _color, const QString& _description);
-        /** @{ */
+        void addScenarioItem(int _position, int _type, const QString& _name,
+            const QString& _header, const QString& _description, const QColor& _color);
 
         /**
          * @brief Изменить элемент сценария
          */
-        void editScenarioItem(int _startPosition, int _endPosition, int _type,
-            const QString& _title, const QString& _colors, const QString& _description);
+        void editScenarioItem(int _startPosition, int _type, const QString& _name,
+            const QString& _header, const QString& _colors);
 
         /**
          * @brief Удалить заданный текст сценария
@@ -150,11 +161,31 @@ namespace ManagementLayer
          */
         void quitFromZenMode();
 
+        /**
+         * @brief Пользователь хочет добавить закладку в заданном месте документа
+         */
+        void addBookmarkRequested(int _position);
+
+        /**
+         * @brief Пользователь хочет убрать закладку в заданном месте документа
+         */
+        void removeBookmarkRequested(int _position);
+
+        /**
+         * @brief Пользователь хочет переименовать номер сцены
+         */
+        void renameSceneNumberRequested(const QString& _newSceneNumber, int _position);
+
     private slots:
         /**
          * @brief Реакция на изменение коэффициента масштабирования редактора сценария
          */
         void aboutTextEditZoomRangeChanged(qreal _zoomRange);
+
+        /**
+         * @brief Переименовать номер сцены
+         */
+        void renameSceneNumber(const QString& _oldSceneNumber, int _position);
 
     private:
         /**

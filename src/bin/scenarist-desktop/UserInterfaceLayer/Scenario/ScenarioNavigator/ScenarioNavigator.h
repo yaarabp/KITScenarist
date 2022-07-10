@@ -21,7 +21,7 @@ namespace UserInterface
         Q_OBJECT
 
     public:
-        explicit ScenarioNavigator(QWidget *parent = 0);
+        explicit ScenarioNavigator(QWidget* _parent = nullptr);
 
         /**
          * @brief Установить количество сцен
@@ -64,6 +64,11 @@ namespace UserInterface
         void setSceneDescriptionHeight(int _height);
 
         /**
+         * @brief Установить префикс номеров сцен
+         */
+        void setSceneNumbersPrefix(const QString& _prefix);
+
+        /**
          * @brief Пересоздать делегат отображения элементов в навигаторе
          * @note Приходится именно пересоздавать навигатор, т.к. другого рабочего способа для
          *		 обновления делегата не нашёл. Проблемы возникают при изменении размера виджета,
@@ -92,6 +97,11 @@ namespace UserInterface
         void setSceneDescriptionVisible(bool _visible);
 
         /**
+         * @brief Установить видимость закладок сценария
+         */
+        void setScriptBookmarksVisible(bool _visible);
+
+        /**
          * @brief Установить видимость справочников сценария
          */
         void setScriptDictionariesVisible(bool _visible);
@@ -115,7 +125,7 @@ namespace UserInterface
         /**
          * @brief Запрос на установку цветов текущего элемента
          */
-        void setItemColors(const QModelIndex& _index, const QString& _colors);
+        void setItemsColors(const QModelIndexList& _index, const QString& _colors);
 
         /**
          * @brief Запрос на изменения типа текущего элемента
@@ -131,6 +141,11 @@ namespace UserInterface
          * @brief Показать/скрыть заметки к сцене
          */
         void sceneDescriptionVisibleChanged(bool _visible);
+
+        /**
+         * @brief Показать/скрыть закладки сценария
+         */
+        void scriptBookmarksVisibleChanged(bool _visible);
 
         /**
          * @brief Показать/скрыть справочники сценария
@@ -232,6 +247,7 @@ namespace UserInterface
         /** @{ */
         QAction* m_showDraft = nullptr;
         QAction* m_showSceneDescription = nullptr;
+        QAction* m_showScriptBookmarks = nullptr;
         QAction* m_showScriptDictionaries = nullptr;
         /** @} */
 
